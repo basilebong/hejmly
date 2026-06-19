@@ -14,7 +14,7 @@
     "@hejmly/core": "workspace:*",
     "@hejmly/app-grocery": "workspace:*",
     "@hejmly/app-recipes": "workspace:*",
-    "hono": "4.12.21"
+    "hono": "4.12.25"
   },
   "devDependencies": {}
 }
