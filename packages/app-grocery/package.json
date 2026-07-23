@@ -20,7 +20,7 @@
     "@radix-ui/react-dropdown-menu": "2.1.16",
     "bunqueue": "2.7.14",
     "clsx": "2.1.1",
-    "hono": "4.12.21",
+    "hono": "4.12.27",
     "tailwind-merge": "2.5.5",
     "ts-pattern": "5.9.0",
     "ulid": "3.0.2",
