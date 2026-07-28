@@ -47,7 +47,6 @@ export const createCleanupScheduler = (opts: CleanupOptions): CleanupScheduler =
         delay,
         jobId: jobIdFor(itemId),
         removeOnComplete: true,
-        removeOnFail: { age: 14 * 24 * 60 * 60 * 1000 },
       },
     );
   };
