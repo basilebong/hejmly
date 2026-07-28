@@ -10,3 +10,20 @@ blockExoticSubdeps: true
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@hejmly/*"
+
+auditConfig:
+  # GHSA-p2fr-6hmx-4528 (@better-auth/oauth-provider): a token request that omits
+  # the `resource` parameter is minted with the plugin's whole `validAudiences`
+  # list as its audience instead of being bound to one resource, so a token can be
+  # replayed against a resource it was never requested for. Exploiting it needs a
+  # SECOND valid audience to replay into; `createAuth` configures exactly one
+  # (`validAudiences: [mcpResource]`), so an unbound token is already identical to
+  # a correctly bound one. Requests that DO send `resource` are validated and
+  # rejected when unknown -- that path was never affected.
+  # Not fixable by upgrade: the patch ships only in 1.7.0-beta.4+, and
+  # @better-auth/oauth-provider@1.7.0-rc.2 peer-requires better-auth ^1.7.0-rc.2,
+  # so taking it means moving the whole auth stack onto a prerelease.
+  # DELETE THIS the moment 1.7.0 is stable, or the moment a second entry is added
+  # to validAudiences -- that is what makes this exploitable.
+  ignoreGhsas:
+    - GHSA-p2fr-6hmx-4528
