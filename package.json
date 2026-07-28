@@ -31,11 +31,5 @@
   },
   "engines": {
     "node": ">=22"
-  },
-  "pnpm": {
-    "overrides": {
-      "@esbuild-kit/core-utils>esbuild": ">=0.25.0",
-      "filelist>minimatch": "^10.2.5"
-    }
   }
 }
