@@ -6,7 +6,6 @@
   "packageManager": "pnpm@10.33.0",
   "license": "Elastic-2.0",
   "scripts": {
-    "preinstall": "npx only-allow pnpm",
     "hooks:install": "lefthook install",
     "dev": "concurrently -k -n srv,web -c blue,green \"bun --hot apps/server/src/index.ts\" \"pnpm --filter @hejmly/web dev\"",
     "build": "pnpm --filter @hejmly/web build",
