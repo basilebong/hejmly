@@ -6,7 +6,6 @@
   "packageManager": "pnpm@10.33.0",
   "license": "Elastic-2.0",
   "scripts": {
-    "preinstall": "npx only-allow pnpm",
     "hooks:install": "lefthook install",
     "dev": "concurrently -k -n srv,web -c blue,green \"bun --hot apps/server/src/index.ts\" \"pnpm --filter @hejmly/web dev\"",
     "build": "pnpm --filter @hejmly/web build",
@@ -22,20 +21,15 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@types/react": "19.2.15",
-    "bun-types": "1.3.0",
-    "concurrently": "9.1.0",
+    "@types/react": "19.2.17",
+    "bun-types": "1.3.14",
+    "concurrently": "9.2.4",
     "drizzle-kit": "0.31.10",
     "drizzle-orm": "0.45.2",
-    "lefthook": "2.1.6",
+    "lefthook": "2.1.10",
     "typescript": "5.7.2"
   },
   "engines": {
     "node": ">=22"
-  },
-  "pnpm": {
-    "overrides": {
-      "esbuild": ">=0.25.0"
-    }
   }
 }
