@@ -2,6 +2,7 @@ import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useRouter } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 
 import { Wordmark } from "./atoms/Wordmark";
 
@@ -39,11 +40,14 @@ export const FirstArrivalScreen = (): React.ReactElement => {
         </div>
 
         <div className="mt-12">
-          <div className="-space-x-2 flex">
+          <div className="flex -space-x-2">
             {family.map((member) => (
               <div
                 key={member.initial}
-                className={`grid size-12 place-items-center rounded-full bg-gradient-to-br ${member.gradient} font-semibold text-[14px] text-white ring-[3px] ring-slate-50`}
+                className={cn(
+                  "grid size-12 place-items-center rounded-full bg-gradient-to-br font-semibold text-[14px] text-white ring-[3px] ring-slate-50",
+                  member.gradient,
+                )}
               >
                 {member.initial}
               </div>

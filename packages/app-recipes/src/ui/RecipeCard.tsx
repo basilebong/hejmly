@@ -1,6 +1,6 @@
 import { CaretRightIcon, ClockIcon, ForkKnifeIcon } from "@phosphor-icons/react";
 import type { ReactElement } from "react";
-import { type RecipeSummary, formatMinutes } from "../shared/index.ts";
+import { formatMinutes, type RecipeSummary } from "../shared/index.ts";
 import { Avatar } from "./Avatar.tsx";
 import { PhotoPlaceholder } from "./PhotoPlaceholder.tsx";
 

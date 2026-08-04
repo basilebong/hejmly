@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { type TimerMap, cancelTimer, isDone, startTimer } from "../shared/index.ts";
+import { cancelTimer, isDone, startTimer, type TimerMap } from "../shared/index.ts";
 import { playChime, unlockAudio } from "./chime.ts";
 
 export type UseTimers = {

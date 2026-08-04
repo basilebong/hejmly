@@ -2,8 +2,8 @@ import { ArrowsClockwiseIcon, CheckIcon, WarningCircleIcon } from "@phosphor-ico
 import type { ReactElement } from "react";
 import type { GroceryItem } from "../shared/index.ts";
 import { Avatar } from "./Avatar.tsx";
-import { RowActionsMenu } from "./RowActionsMenu.tsx";
 import { cn } from "./cn.ts";
+import { RowActionsMenu } from "./RowActionsMenu.tsx";
 
 export type ItemSyncState = "synced" | "queued" | "error";
 

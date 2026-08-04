@@ -154,13 +154,7 @@ const Stepper = ({
   );
 };
 
-const RemoveButton = ({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}): ReactElement => (
+const RemoveButton = ({ label, onClick }: { label: string; onClick: () => void }): ReactElement => (
   <button
     type="button"
     aria-label={label}

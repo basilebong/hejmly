@@ -1,10 +1,9 @@
+import type { CreateRecipeInput } from "@hejmly/app-recipes/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactElement, useRef } from "react";
 import { toast } from "sonner";
-
 import { createRecipe } from "@/lib/recipes-api";
-import type { CreateRecipeInput } from "@hejmly/app-recipes/shared";
 import { RecipeForm } from "./RecipeForm";
 
 export const CreateRecipeScreen = (): ReactElement => {

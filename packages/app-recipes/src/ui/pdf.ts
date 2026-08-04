@@ -1,4 +1,4 @@
-import { type Recipe, formatMinutes } from "../shared/index.ts";
+import { formatMinutes, type Recipe } from "../shared/index.ts";
 
 const ESCAPES: Readonly<Record<string, string>> = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
 

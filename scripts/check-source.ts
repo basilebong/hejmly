@@ -7,7 +7,7 @@ type Violation = {
   file: string;
   line: number;
   col: number;
-  rule: "no-bare-as" | "sorted-exports";
+  rule: "no-bare-as";
   message: string;
 };
 
@@ -65,21 +65,6 @@ const checkFile = (file: string): Violation[] => {
         rule: "no-bare-as",
         message: "angle-bracket type assertion forbidden",
       });
-    }
-
-    if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
-      const specs = node.exportClause.elements;
-      const names = specs.map((e) => e.name.text);
-      const sorted = [...names].toSorted((a, b) => a.localeCompare(b));
-      if (names.join("|") !== sorted.join("|")) {
-        const pos = at(node);
-        violations.push({
-          file,
-          ...pos,
-          rule: "sorted-exports",
-          message: `named exports not alphabetically sorted: got [${names.join(", ")}], expected [${sorted.join(", ")}]`,
-        });
-      }
     }
 
     ts.forEachChild(node, visit);

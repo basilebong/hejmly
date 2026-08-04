@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
-  type TimerMap,
   cancelTimer,
   elapsedFraction,
   hasActiveTimer,
   isDone,
   remainingMs,
   startTimer,
+  type TimerMap,
   viewTimer,
 } from "./timers.ts";
 

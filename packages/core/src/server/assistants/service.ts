@@ -1,12 +1,12 @@
 import { and, desc, eq } from "drizzle-orm";
 import {
   type ConnectedAssistant,
-  type OAuthConsentId,
-  type Result,
-  type UserId,
   err,
+  type OAuthConsentId,
   ok,
   parseOAuthConsentId,
+  type Result,
+  type UserId,
 } from "../../shared/index.ts";
 import {
   oauthAccessTokens,

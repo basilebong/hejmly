@@ -5,8 +5,8 @@ import { join } from "node:path";
 import type { CleanupScheduler } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
-import { createAssistantsService, createAuditRecorder } from "@hejmly/core/server";
 import type { Auth, Db } from "@hejmly/core/server";
+import { createAssistantsService, createAuditRecorder } from "@hejmly/core/server";
 import { withTestAuth } from "@hejmly/core/server/test";
 import { createApp } from "./composition.ts";
 
