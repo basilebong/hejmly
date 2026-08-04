@@ -15,7 +15,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@hejmly/core": "workspace:*",
     "clsx": "2.1.1",
     "hono": "4.12.32",
