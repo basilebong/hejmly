@@ -9,9 +9,8 @@
     "declaration": true,
     "declarationMap": true,
     "types": ["bun-types"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["vite.config.ts"],
