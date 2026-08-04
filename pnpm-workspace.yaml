@@ -2,9 +2,18 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# pnpm reads allowBuilds as {packagePattern: boolean} and switches strictly on
+# true/false. It was previously written as an index map ('0': esbuild), whose
+# values are strings, so both entries matched neither case and were dropped --
+# the key resolved to an empty onlyBuiltDependencies and did nothing.
+# It is still inert today because .npmrc sets ignore-scripts=true, which
+# disables dependency lifecycle scripts outright; esbuild and @biomejs/biome
+# both work without their postinstall because each resolves its platform binary
+# from an optional dependency. Kept in the parsed form so the allowlist is
+# correct if ignore-scripts is ever relaxed.
 allowBuilds:
-  '0': esbuild
-  '1': '@biomejs/biome'
+  esbuild: true
+  '@biomejs/biome': true
 blockExoticSubdeps: true
 
 minimumReleaseAge: 1440
@@ -20,43 +29,23 @@ auditConfig:
   # (`validAudiences: [mcpResource]`), so an unbound token is already identical to
   # a correctly bound one. Requests that DO send `resource` are validated and
   # rejected when unknown -- that path was never affected.
-  # Not fixable by upgrade: the patch ships only in 1.7.0-beta.4+, and
-  # @better-auth/oauth-provider@1.7.0-rc.2 peer-requires better-auth ^1.7.0-rc.2,
-  # so taking it means moving the whole auth stack onto a prerelease.
+  # Not fixable by upgrade. Re-checked 2026-08-04: the advisory range is
+  # ">=1.4.8 <1.7.0-beta.4", latest stable is still 1.6.25, and the newest 1.7.0
+  # prerelease (1.7.0-rc.3) peer-requires better-auth ^1.7.0-rc.3, so taking the
+  # patch means moving the whole auth stack onto a release candidate.
   # DELETE THIS the moment 1.7.0 is stable, or the moment a second entry is added
   # to validAudiences -- that is what makes this exploitable.
   ignoreGhsas:
     - GHSA-p2fr-6hmx-4528
 
 overrides:
-  # Every override is scoped to ONE parent. A bare "esbuild: >=0.25.0" here would
-  # replace vite's own ^0.25.0 rather than narrow it, floating vite to 0.28.x and
-  # breaking `pnpm build` with "Transforming destructuring to the configured target
-  # environment is not supported yet". Scope, never global.
+  # Every override is scoped to ONE parent, so it can only ever lift the leaf it
+  # names. A bare "esbuild: >=0.25.0" would additionally rewrite esbuild for every
+  # other consumer in the tree, which is a silent blast radius nobody reviews.
+  # Scope, never global.
 
   # @esbuild-kit/core-utils (deprecated, via drizzle-kit > @esbuild-kit/esm-loader)
   # hard-pins esbuild ~0.18.20, which carries the dev-server SSRF. drizzle-kit
   # itself already declares ^0.25.4, so only this leaf needs lifting.
   # Remove once drizzle-kit drops the @esbuild-kit chain.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
-
-  # GHSA-mh99-v99m-4gvg: no brace-expansion 2.x release satisfies it, and the whole
-  # chain above it (vite-plugin-pwa > workbox-build >
-  # @trickfilm400/rollup-plugin-off-main-thread > ejs > jake > filelist) is already
-  # at its newest published version, so there is no bump available.
-  # Overriding brace-expansion directly does NOT work: minimatch@5 requires it and
-  # calls the result, but 5.x exports {expand, ...} rather than a bare function --
-  # that typechecks and breaks the service-worker build at runtime. filelist calls
-  # `minimatch.match(...)`, a property minimatch 10 still exports, so lifting
-  # minimatch instead pulls brace-expansion 5 and drops the 2.x line entirely.
-  "filelist>minimatch": "^10.2.5"
-
-  # GHSA-frvp-7c67-39w9 (Windows-only path traversal in serve-static).
-  # TEMPORARY -- delete this together with the @modelcontextprotocol/sdk 1.29.0 ->
-  # 1.30.0 bump, which declares "^1.19.9 || ^2.0.5" natively and makes it redundant.
-  # 1.30.0 is published but still inside our own minimumReleaseAge window, and that
-  # gate is not worth weakening for this. Upstream widening to ^2.0.5 is the
-  # evidence that 2.x is compatible; we additionally never reach the affected code
-  # (it lives in sdk/server/streamableHttp.js, and core/server/mcp imports
-  # webStandardStreamableHttp.js instead).
-  "@modelcontextprotocol/sdk>@hono/node-server": "^2.0.5"

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { CleanupScheduler } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
-import { type Db, createAssistantsService, createAuditRecorder } from "@hejmly/core/server";
+import { createAssistantsService, createAuditRecorder, type Db } from "@hejmly/core/server";
 import { withTestAuth } from "@hejmly/core/server/test";
 import { type AppType, createApp } from "./composition.ts";
 

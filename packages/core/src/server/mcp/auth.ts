@@ -1,5 +1,5 @@
 import { mcpHandler } from "@better-auth/oauth-provider";
-import { type UserId, parseUserId } from "../../shared/index.ts";
+import { parseUserId, type UserId } from "../../shared/index.ts";
 
 export type McpAuthConfig = {
   issuer: string;

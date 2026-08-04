@@ -4,7 +4,7 @@ import { makeSignature } from "better-auth/crypto";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { parseAllowedEmails } from "../auth/allowlist.ts";
 import { type Auth, createAuth } from "../auth/index.ts";
-import { type Db, createDb } from "../db/index.ts";
+import { createDb, type Db } from "../db/index.ts";
 
 const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../drizzle");
 

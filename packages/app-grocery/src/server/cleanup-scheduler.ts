@@ -1,6 +1,6 @@
 import { Bunqueue } from "bunqueue/client";
-import { isPurchased } from "../shared/index.ts";
 import type { GroceryItemId } from "../shared/index.ts";
+import { isPurchased } from "../shared/index.ts";
 import type { GroceryService } from "./service.ts";
 
 export const PURCHASED_TTL_MS = 7 * 24 * 60 * 60 * 1000;

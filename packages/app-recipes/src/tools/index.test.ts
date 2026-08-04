@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Auth, Db } from "@hejmly/core/server";
 import { createAuditRecorder } from "@hejmly/core/server";
 import { withTestAuth } from "@hejmly/core/server/test";
-import { type UserId, parseUserId } from "@hejmly/core/shared";
+import { parseUserId, type UserId } from "@hejmly/core/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

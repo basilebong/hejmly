@@ -1,6 +1,6 @@
-import { Spinner } from "@/features/auth/atoms/Spinner";
 import { SignOutIcon } from "@phosphor-icons/react";
 import type { ReactElement } from "react";
+import { Spinner } from "@/features/auth/atoms/Spinner";
 
 type SignOutButtonProps = {
   loading: boolean;

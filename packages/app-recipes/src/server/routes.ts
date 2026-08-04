@@ -48,7 +48,9 @@ const invalidInput = (message = "Invalid input") =>
 
 const IMAGE_CACHE_CONTROL = "private, max-age=0, must-revalidate";
 
-const decodeImageDataUrl = (value: string): { mime: string; bytes: Uint8Array } | null => {
+const decodeImageDataUrl = (
+  value: string,
+): { mime: string; bytes: Uint8Array<ArrayBuffer> } | null => {
   const match = IMAGE_DATA_URL_RE.exec(value);
   if (match === null) return null;
   const mime = match[1];

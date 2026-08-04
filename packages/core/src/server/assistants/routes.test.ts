@@ -4,7 +4,7 @@ import type { AuditEntry, AuditRecorder } from "../audit/recorder.ts";
 import type { Auth } from "../auth/index.ts";
 import { oauthClients, oauthConsents } from "../auth/schema.ts";
 import type { Db } from "../db/index.ts";
-import { type SessionVariables, createRequireSession } from "../middleware/session.ts";
+import { createRequireSession, type SessionVariables } from "../middleware/session.ts";
 import { withTestAuth } from "../test/index.ts";
 import { createAssistantsRoutes } from "./routes.ts";
 import { createAssistantsService } from "./service.ts";

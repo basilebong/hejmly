@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   type Auth,
+  createRequireSession,
   type Db,
   type SessionVariables,
-  createRequireSession,
 } from "@hejmly/core/server";
 import { withTestAuth } from "@hejmly/core/server/test";
 import { Hono } from "hono";

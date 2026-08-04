@@ -241,7 +241,7 @@ the same Google sign-in + consent. Remote connectors require HTTPS.
 | `pnpm test`                | `bun test`                                      |
 | `pnpm typecheck`           | `tsc -b --noEmit` across the workspace          |
 | `pnpm check`               | Biome lint + format check (incl. import order)  |
-| `pnpm check:source`        | No-bare-`as` + sorted-named-exports (TS AST)    |
+| `pnpm check:source`        | No-bare-`as` (TS AST)                           |
 | `pnpm lint:fix`            | Biome auto-fix (organizes imports, etc.)        |
 | `pnpm hooks:install`       | Install lefthook git hooks (one-time)           |
 | `pnpm auth:generate`       | Regenerate Better Auth Drizzle schema; commit   |
@@ -274,7 +274,7 @@ Run `pnpm hooks:install` once after `pnpm install` (`.npmrc` has
 
 `pre-commit` (parallel):
 - Biome lint + format on staged `.ts`/`.tsx`/`.json`/`.css` (auto-fix, re-stages)
-- `check-source` AST check (no bare `as`, sorted named exports) on staged `.ts`/`.tsx`
+- `check-source` AST check (no bare `as`) on staged `.ts`/`.tsx`
 - `tsc -b --noEmit` across the workspace (types are cross-file)
 
 ## Mobile-first

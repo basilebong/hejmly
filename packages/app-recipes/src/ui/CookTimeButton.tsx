@@ -1,7 +1,7 @@
 import { TimerIcon } from "@phosphor-icons/react";
 import type { ReactElement } from "react";
 import { match } from "ts-pattern";
-import { type Timer, formatClock, viewTimer } from "../shared/index.ts";
+import { formatClock, type Timer, viewTimer } from "../shared/index.ts";
 
 type CookTimeButtonProps = {
   id: string;
