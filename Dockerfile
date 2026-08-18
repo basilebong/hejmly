@@ -19,7 +19,7 @@ WORKDIR /app
 COPY . .
 RUN pnpm --filter @hejmly/web build
 
-FROM oven/bun:1-slim AS runtime
+FROM oven/bun:1.3.14-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV DATABASE_PATH=/data/app.db

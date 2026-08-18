@@ -47,10 +47,11 @@ jobs:
           # or the two gates disagree. Full justification lives next to that entry; in
           # short: @better-auth/oauth-provider mints unbound tokens with the whole
           # validAudiences list as audience, which needs a SECOND audience to exploit, and
-          # createAuth configures exactly one. Patched only in a 1.7.0 prerelease that
-          # peer-requires the entire auth stack move with it.
-          # DELETE FROM BOTH FILES TOGETHER when 1.7.0 is stable, or if a second entry is
-          # ever added to validAudiences.
+          # createAuth configures exactly one. The fix landed in 1.7.0, stable since
+          # 2026-08-18, but that release drops the `mcpHandler` export createMcpAuthGuard
+          # is built on, so taking it is an auth migration rather than a bump.
+          # DELETE FROM BOTH FILES TOGETHER once that migration lands, or if a second entry
+          # is ever added to validAudiences.
           allow-ghsas: GHSA-p2fr-6hmx-4528
           # MPL-2.0: lightningcss (Tailwind v4 CSS pipeline, stack-locked). Use unmodified at build time;
           #   MPL §3.3 explicitly allows combining unmodified MPL files into a Larger Work under any license.

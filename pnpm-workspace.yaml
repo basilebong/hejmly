@@ -6,16 +6,23 @@ packages:
 # true/false. It was previously written as an index map ('0': esbuild), whose
 # values are strings, so both entries matched neither case and were dropped --
 # the key resolved to an empty onlyBuiltDependencies and did nothing.
-# It is still inert today because .npmrc sets ignore-scripts=true, which
-# disables dependency lifecycle scripts outright; esbuild and @biomejs/biome
-# both work without their postinstall because each resolves its platform binary
-# from an optional dependency. Kept in the parsed form so the allowlist is
-# correct if ignore-scripts is ever relaxed.
+# It is inert under pnpm 10, where .npmrc's ignore-scripts=true wins outright;
+# esbuild and @biomejs/biome both work without their postinstall because each
+# resolves its platform binary from an optional dependency. It stops being inert
+# on a pnpm 11 upgrade -- 11.15.0 runs esbuild's postinstall from this allowlist
+# despite ignore-scripts=true -- so the entries must stay correct, not just parse.
 allowBuilds:
   esbuild: true
   '@biomejs/biome': true
 blockExoticSubdeps: true
 
+# 1440 (one day), NOT the 43200 that would mechanise the 30-day maturity bar the
+# audits apply by hand. Tested: better-auth 1.6.25 hard-pins @better-auth/core
+# 1.6.25, which is 25 days old, so a 30-day floor makes every `pnpm add` and
+# `pnpm update` in this workspace fail with ERR_PNPM_NO_MATURE_MATCHING_VERSION
+# against an exact pin that has no older satisfying version. better-auth ships
+# weekly, so that dependency is under 30 days most of the time. Frozen installs
+# are unaffected either way -- the policy only runs at resolution.
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@hejmly/*"
@@ -29,13 +36,18 @@ auditConfig:
   # (`validAudiences: [mcpResource]`), so an unbound token is already identical to
   # a correctly bound one. Requests that DO send `resource` are validated and
   # rejected when unknown -- that path was never affected.
-  # Not fixable by upgrade. Re-checked 2026-08-11 against the npm advisory API:
-  # the range is unchanged at ">=1.4.8 <1.7.0-beta.4", and the new latest stable
-  # 1.6.26 still falls inside it. The newest 1.7.0 prerelease (1.7.0-rc.4)
-  # peer-requires better-auth ^1.7.0-rc.4, so taking the patch means moving the
-  # whole auth stack onto a release candidate.
-  # DELETE THIS the moment 1.7.0 is stable, or the moment a second entry is added
-  # to validAudiences -- that is what makes this exploitable.
+  # Re-checked 2026-08-18 against the npm advisory API: the range is unchanged at
+  # ">=1.4.8 <1.7.0-beta.4". 1.7.0 went STABLE on 2026-08-18T00:10Z and is outside
+  # it, so this entry is finally retirable by upgrade -- but not yet, on two counts.
+  # It was under an hour old when checked, and pnpm refuses it against our own
+  # minimumReleaseAge (ERR_PNPM_NO_MATURE_MATCHING_VERSION); taking it would mean
+  # adding a minimumReleaseAgeExclude to bypass the supply-chain floor for a finding
+  # that is not exploitable here. And 1.7.0 is breaking: it drops the `mcpHandler`
+  # export that createMcpAuthGuard is built on, retypes the oauthProvider plugin
+  # incompatibly with BetterAuthPlugin, and changes the test-auth helper signature
+  # (10 call sites). That is an auth migration, not a version bump.
+  # DELETE THIS once 1.7.0 has soaked and that migration lands, or the moment a
+  # second entry is added to validAudiences -- that is what makes this exploitable.
   ignoreGhsas:
     - GHSA-p2fr-6hmx-4528
 
