@@ -1,7 +1,17 @@
 #!/usr/bin/env bun
-import { readFileSync } from "node:fs";
-import { relative } from "node:path";
-import ts from "typescript";
+import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import type {
+  AsExpression,
+  Identifier,
+  Node,
+  SourceFile,
+  TypeAssertion,
+  TypeNode,
+  TypeReferenceNode,
+} from "typescript/unstable/ast";
+import { SyntaxKind } from "typescript/unstable/ast";
+import { API } from "typescript/unstable/async";
 
 type Violation = {
   file: string;
@@ -11,77 +21,133 @@ type Violation = {
   message: string;
 };
 
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 
 const collectFiles = (): string[] => {
-  if (args.length > 0) return args;
+  if (args.length > 0) return args.map((f) => resolve(repoRoot, f));
   const glob = new Bun.Glob("**/*.{ts,tsx}");
   const out: string[] = [];
-  for (const f of glob.scanSync(".")) {
+  for (const f of glob.scanSync(repoRoot)) {
     if (/(^|\/)(node_modules|dist|build|coverage|drizzle|\.git)\//.test(f)) continue;
     if (f.endsWith(".d.ts")) continue;
-    out.push(f);
+    out.push(resolve(repoRoot, f));
   }
   return out;
 };
 
-const isAsConst = (typeNode: ts.TypeNode): boolean =>
-  ts.isTypeReferenceNode(typeNode) &&
-  ts.isIdentifier(typeNode.typeName) &&
+// TypeScript 7 ships no is-helpers for these kinds and `Node` is a base interface
+// rather than a discriminated union, so `kind` alone does not narrow.
+const isAsExpression = (node: Node): node is AsExpression => node.kind === SyntaxKind.AsExpression;
+
+const isTypeAssertion = (node: Node): node is TypeAssertion =>
+  node.kind === SyntaxKind.TypeAssertionExpression;
+
+const isTypeReferenceNode = (node: TypeNode): node is TypeReferenceNode =>
+  node.kind === SyntaxKind.TypeReference;
+
+const isIdentifier = (node: Node): node is Identifier => node.kind === SyntaxKind.Identifier;
+
+const isAsConst = (typeNode: TypeNode): boolean =>
+  isTypeReferenceNode(typeNode) &&
+  isIdentifier(typeNode.typeName) &&
   typeNode.typeName.text === "const";
 
-const checkFile = (file: string): Violation[] => {
-  const src = readFileSync(file, "utf8");
-  const sf = ts.createSourceFile(
-    file,
-    src,
-    ts.ScriptTarget.Latest,
-    true,
-    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-  );
-
+const checkSourceFile = (file: string, sf: SourceFile): Violation[] => {
   const violations: Violation[] = [];
-  const at = (node: ts.Node) => {
-    const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart());
+  const at = (node: Node) => {
+    const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
     return { line: line + 1, col: character + 1 };
   };
 
-  const visit = (node: ts.Node): void => {
-    if (ts.isAsExpression(node) && !isAsConst(node.type)) {
-      const pos = at(node.type);
+  const visit = (node: Node): void => {
+    if (isAsExpression(node) && !isAsConst(node.type)) {
       violations.push({
         file,
-        ...pos,
+        ...at(node.type),
         rule: "no-bare-as",
         message: "'as' type assertion forbidden; only 'as const' is allowed",
       });
     }
 
-    if (ts.isTypeAssertionExpression(node)) {
-      const pos = at(node);
+    if (isTypeAssertion(node)) {
       violations.push({
         file,
-        ...pos,
+        ...at(node),
         rule: "no-bare-as",
         message: "angle-bracket type assertion forbidden",
       });
     }
 
-    ts.forEachChild(node, visit);
+    node.forEachChild(visit);
   };
-  visit(sf);
+  sf.forEachChild(visit);
   return violations;
 };
 
+// TypeScript 7 exposes no parser for a bare source string — an AST only comes out
+// of a Program. The files to check do not all belong to one: drizzle.config.ts,
+// better-auth.config.ts and scripts/ sit outside every referenced project. So the
+// project is synthesised here and handed to the API through its virtual-FS hooks,
+// which fall back to the real disk for everything except this one path. That also
+// keeps the pre-commit invocation (an explicit list of staged files) on the same
+// code path as a full scan.
+const virtualConfigPath = resolve(repoRoot, "tsconfig.check-source.json");
+
+const virtualConfig = (files: string[]): string =>
+  JSON.stringify({
+    extends: "./tsconfig.base.json",
+    compilerOptions: { noEmit: true, composite: false, declaration: false, incremental: false },
+    files,
+  });
+
 const files = collectFiles();
-const all: Violation[] = [];
-for (const file of files) {
-  all.push(...checkFile(file));
+if (files.length === 0) {
+  console.log("check-source: ok (0 files)");
+  process.exit(0);
 }
 
-const cwd = process.cwd();
+const configText = virtualConfig(files);
+const api = new API({
+  cwd: repoRoot,
+  fs: {
+    readFile: (fileName) => (fileName === virtualConfigPath ? configText : undefined),
+    fileExists: (fileName) => (fileName === virtualConfigPath ? true : undefined),
+  },
+});
+
+const all: Violation[] = [];
+const missing: string[] = [];
+try {
+  const snapshot = await api.updateSnapshot({ openProjects: [virtualConfigPath] });
+  const project = snapshot.getProjects()[0];
+  if (project === undefined) {
+    console.error("check-source: failed to load the synthesised project");
+    process.exit(1);
+  }
+  for (const file of files) {
+    const sf = await project.program.getSourceFile(file);
+    // A file silently absent from the program would be a silently unchecked file.
+    if (sf === undefined) {
+      missing.push(file);
+      continue;
+    }
+    all.push(...checkSourceFile(file, sf));
+  }
+} finally {
+  await api.close();
+}
+
+if (missing.length > 0) {
+  for (const file of missing) {
+    console.error(`check-source: ${relative(repoRoot, file)} was not loaded into the program`);
+  }
+  console.error(`\ncheck-source: ${missing.length} file(s) could not be checked`);
+  process.exit(1);
+}
+
 for (const v of all) {
-  const rel = relative(cwd, v.file);
+  const rel = relative(repoRoot, v.file);
   console.error(`${rel}:${v.line}:${v.col}  [${v.rule}]  ${v.message}`);
 }
 
