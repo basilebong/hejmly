@@ -4,6 +4,9 @@ FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+# pnpm-workspace.yaml declares patchedDependencies, so the patch files have to be
+# present before install or --frozen-lockfile fails resolving them.
+COPY patches ./patches
 COPY apps/server/package.json   ./apps/server/
 COPY apps/web/package.json      ./apps/web/
 COPY packages/core/package.json ./packages/core/
