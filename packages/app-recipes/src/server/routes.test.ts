@@ -5,7 +5,7 @@ import {
   type Db,
   type SessionVariables,
 } from "@hejmly/core/server";
-import { withTestAuth } from "@hejmly/core/server/test";
+import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { Hono } from "hono";
 import * as v from "valibot";
 import type { CreateRecipeInput } from "../shared/index.ts";
@@ -23,7 +23,10 @@ const seedSessionCookie = async (
   signSessionCookie: (token: string) => Promise<string>,
 ): Promise<{ userId: string; cookie: string }> => {
   const ctx = await auth.$context;
-  const user = await ctx.internalAdapter.createUser({ name: "Basile", email: TEST_EMAIL });
+  const user = await ctx.internalAdapter.createUser(
+    { name: "Basile", email: TEST_EMAIL },
+    googleProvisioningSource,
+  );
   const session = await ctx.internalAdapter.createSession(user.id);
   const signed = await signSessionCookie(session.token);
   return { userId: user.id, cookie: `Hejmly.session_token=${signed}` };

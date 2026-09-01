@@ -3,7 +3,7 @@ import type { CleanupScheduler } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
 import { createAssistantsService, createAuditRecorder, type Db } from "@hejmly/core/server";
-import { withTestAuth } from "@hejmly/core/server/test";
+import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { type AppType, createApp } from "./composition.ts";
 
 const noopCleanup: CleanupScheduler = {
@@ -76,10 +76,13 @@ const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<voi
       { allowedEmails: "basile@example.com", baseURL },
       async ({ auth, db, signSessionCookie }) => {
         const adapter = await auth.$context;
-        const user = await adapter.internalAdapter.createUser({
-          name: "Basile",
-          email: "basile@example.com",
-        });
+        const user = await adapter.internalAdapter.createUser(
+          {
+            name: "Basile",
+            email: "basile@example.com",
+          },
+          googleProvisioningSource,
+        );
         const session = await adapter.internalAdapter.createSession(user.id);
         const cookie = `Hejmly.session_token=${await signSessionCookie(session.token)}`;
 
@@ -116,13 +119,18 @@ const runClaudeOAuthFlow = async (baseURL: string, cookie: string): Promise<OAut
     body: JSON.stringify({
       client_name: "Claude",
       redirect_uris: [redirectUri],
+      // Better Auth 1.7 enforces OIDC DCR application_type rules: a "web" client
+      // (the default) may only use https redirect URIs on non-loopback hosts.
+      // This flow redirects to http://localhost, which is a native client.
+      application_type: "native",
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       scope: "openid profile email",
     }),
   });
-  if (register.status !== 200) throw new Error(`register failed: ${register.status}`);
+  // RFC 7591 §3.2.1: a successful Dynamic Client Registration returns 201 Created.
+  if (register.status !== 201) throw new Error(`register failed: ${register.status}`);
   const clientId: unknown = (await register.json()).client_id;
   if (typeof clientId !== "string") throw new Error("missing client_id");
 

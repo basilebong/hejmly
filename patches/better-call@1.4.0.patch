@@ -1,0 +1,34 @@
+diff --git a/dist/openapi.d.cts b/dist/openapi.d.cts
+index 86c70a07be306c2169638199038c6c3b924242e5..7638e768acb6901873178908baaba5783d15ecb3 100644
+--- a/dist/openapi.d.cts
++++ b/dist/openapi.d.cts
+@@ -11,9 +11,9 @@ interface OpenAPIParameter {
+     format?: string | undefined;
+     items?: {
+       type: OpenAPISchemaType;
+-    };
+-    enum?: string[];
+-    minLength?: number;
++    } | undefined;
++    enum?: string[] | undefined;
++    minLength?: number | undefined;
+     description?: string | undefined;
+     default?: string | undefined;
+     example?: string | undefined;
+diff --git a/dist/openapi.d.mts b/dist/openapi.d.mts
+index 1a04fa41da6a5fb0fc3937f6ac6793ce3dc1ea6f..3e54d7b93611e039c217dad281120407a0d8ba02 100644
+--- a/dist/openapi.d.mts
++++ b/dist/openapi.d.mts
+@@ -11,9 +11,9 @@ interface OpenAPIParameter {
+     format?: string | undefined;
+     items?: {
+       type: OpenAPISchemaType;
+-    };
+-    enum?: string[];
+-    minLength?: number;
++    } | undefined;
++    enum?: string[] | undefined;
++    minLength?: number | undefined;
+     description?: string | undefined;
+     default?: string | undefined;
+     example?: string | undefined;

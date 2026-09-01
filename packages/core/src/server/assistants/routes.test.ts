@@ -5,7 +5,7 @@ import type { Auth } from "../auth/index.ts";
 import { oauthClients, oauthConsents } from "../auth/schema.ts";
 import type { Db } from "../db/index.ts";
 import { createRequireSession, type SessionVariables } from "../middleware/session.ts";
-import { withTestAuth } from "../test/index.ts";
+import { googleProvisioningSource, withTestAuth } from "../test/index.ts";
 import { createAssistantsRoutes } from "./routes.ts";
 import { createAssistantsService } from "./service.ts";
 
@@ -29,7 +29,10 @@ const seedSessionCookie = async (
   email: string,
 ): Promise<{ userId: string; cookie: string }> => {
   const ctx = await auth.$context;
-  const user = await ctx.internalAdapter.createUser({ name: "Basile", email });
+  const user = await ctx.internalAdapter.createUser(
+    { name: "Basile", email },
+    googleProvisioningSource,
+  );
   const session = await ctx.internalAdapter.createSession(user.id);
   const signed = await signSessionCookie(session.token);
   return { userId: user.id, cookie: `Hejmly.session_token=${signed}` };

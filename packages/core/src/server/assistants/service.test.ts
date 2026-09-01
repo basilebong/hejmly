@@ -8,14 +8,14 @@ import {
   oauthRefreshTokens,
 } from "../auth/schema.ts";
 import type { Db } from "../db/index.ts";
-import { withTestAuth } from "../test/index.ts";
+import { googleProvisioningSource, withTestAuth } from "../test/index.ts";
 import { createAssistantsService } from "./service.ts";
 
 const TEST_EMAIL = "basile@example.com";
 
 const seedUser = async (auth: Auth, name: string, email: string): Promise<string> => {
   const ctx = await auth.$context;
-  const user = await ctx.internalAdapter.createUser({ name, email });
+  const user = await ctx.internalAdapter.createUser({ name, email }, googleProvisioningSource);
   return user.id;
 };
 
@@ -51,6 +51,7 @@ const insertAccessToken = async (
     userId: opts.userId,
     scopes: ["openid", "mcp"],
     createdAt: new Date("2026-05-28T08:30:00.000Z"),
+    expiresAt: new Date("2026-05-28T08:45:00.000Z"),
   });
 };
 
@@ -65,6 +66,7 @@ const insertRefreshToken = async (
     userId: opts.userId,
     scopes: ["openid", "mcp"],
     createdAt: new Date("2026-05-28T08:30:00.000Z"),
+    expiresAt: new Date("2026-06-27T08:30:00.000Z"),
   });
 };
 

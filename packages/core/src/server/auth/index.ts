@@ -22,7 +22,17 @@ export const createAuth = (opts: CreateAuthOptions) => {
     oauthProvider({
       loginPage: "/sign-in",
       consentPage: "/consent",
-      validAudiences: [opts.mcpResource],
+      // The registered resource set IS the audience allowlist: a token request
+      // naming an unregistered `resource` is rejected, and one that omits it is
+      // bound to this single registered resource rather than to every audience
+      // the server knows. This replaces 1.6's `validAudiences`, whose unbound
+      // tokens carried the whole list (GHSA-p2fr-6hmx-4528).
+      resources: [opts.mcpResource],
+      // Hejmly serves exactly one protected resource, and any assistant that
+      // completes DCR is here to reach it, so every registered client is linked
+      // to it. Per-client enforcement stays on: a client still cannot request a
+      // resource it was never linked to.
+      clientRegistrationDefaultResources: [opts.mcpResource],
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
       requirePKCE: true,
@@ -32,7 +42,6 @@ export const createAuth = (opts: CreateAuthOptions) => {
       // durable revocation lives in AssistantsService.revoke (deletes consent +
       // refresh token, so no new token can be minted).
       accessTokenExpiresIn: 60 * 15,
-      silenceWarnings: { oauthAuthServerConfig: true },
     }),
   ];
 

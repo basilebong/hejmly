@@ -12,32 +12,14 @@ packages:
 # from an optional dependency. Kept in the parsed form so the allowlist is
 # correct if ignore-scripts is ever relaxed.
 allowBuilds:
-  esbuild: true
   '@biomejs/biome': true
+  esbuild: true
+
 blockExoticSubdeps: true
 
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@hejmly/*"
-
-auditConfig:
-  # GHSA-p2fr-6hmx-4528 (@better-auth/oauth-provider): a token request that omits
-  # the `resource` parameter is minted with the plugin's whole `validAudiences`
-  # list as its audience instead of being bound to one resource, so a token can be
-  # replayed against a resource it was never requested for. Exploiting it needs a
-  # SECOND valid audience to replay into; `createAuth` configures exactly one
-  # (`validAudiences: [mcpResource]`), so an unbound token is already identical to
-  # a correctly bound one. Requests that DO send `resource` are validated and
-  # rejected when unknown -- that path was never affected.
-  # Not fixable by upgrade. Re-checked 2026-08-11 against the npm advisory API:
-  # the range is unchanged at ">=1.4.8 <1.7.0-beta.4", and the new latest stable
-  # 1.6.26 still falls inside it. The newest 1.7.0 prerelease (1.7.0-rc.4)
-  # peer-requires better-auth ^1.7.0-rc.4, so taking the patch means moving the
-  # whole auth stack onto a release candidate.
-  # DELETE THIS the moment 1.7.0 is stable, or the moment a second entry is added
-  # to validAudiences -- that is what makes this exploitable.
-  ignoreGhsas:
-    - GHSA-p2fr-6hmx-4528
 
 overrides:
   # Every override is scoped to ONE parent, so it can only ever lift the leaf it
@@ -50,3 +32,19 @@ overrides:
   # itself already declares ^0.25.4, so only this leaf needs lifting.
   # Remove once drizzle-kit drops the @esbuild-kit chain.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
+
+# better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
+# `schema.minLength` as optional WITHOUT `| undefined`, while the sibling
+# `format`/`description`/`default`/`example` in the same object do include it.
+# @better-auth/oauth-provider's /oauth2/authorize endpoint metadata is a union
+# whose members carry `items?: undefined`, so under our tsconfig's
+# `exactOptionalPropertyTypes` the plugin stops being assignable to
+# BetterAuthPlugin and `createAuth` fails to compile. The patch adds the missing
+# `| undefined` to those three properties -- strictly widening, and consistent
+# with how the same object already types its other optional fields.
+# better-call 1.4.0 is `latest` and @better-auth/oauth-provider peer-pins it
+# exactly, so there is no version to upgrade to. Drop this the moment upstream
+# ships the fix; a better-call bump makes the patch fail loudly rather than
+# silently rot.
+patchedDependencies:
+  better-call@1.4.0: patches/better-call@1.4.0.patch

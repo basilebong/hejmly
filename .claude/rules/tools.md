@@ -35,10 +35,20 @@ authorization-code flow. The user signs in with Google (the existing social
 provider) and approves the `/consent` screen.
 
 `/mcp` is protected by `createMcpAuthGuard` in `@hejmly/core/server` (a thin
-wrapper over `mcpHandler` from `@better-auth/oauth-provider`): it verifies the
-Bearer JWT against our JWKS (`/api/auth/jwks`), checks issuer + audience, and
-yields `jwt.sub` (the `UserId`). Every tool call records `{ userId, via: "mcp" }`
+wrapper over `verifyAccessTokenRequest` from
+`@better-auth/oauth-provider/resource-client`; 1.7 removed the older
+`mcpHandler`): it verifies the Bearer JWT against our JWKS (`/api/auth/jwks`),
+checks issuer + audience, enforces DPoP binding when the token carries one, and
+yields `jwt.sub` (the `UserId`). Rejections come back as an `APIError` already
+carrying the RFC 6750 / RFC 9728 `WWW-Authenticate` challenge, which the guard
+turns into the 401 response. Every tool call records `{ userId, via: "mcp" }`
 in the audit log.
+
+The MCP audience is a registered *resource*, not a free-form audience list:
+`oauthProvider({ resources: [mcpResource], clientRegistrationDefaultResources:
+[mcpResource] })`. Per-client resource enforcement is on by default, so a token
+is bound to the one resource it was issued for. Do NOT reintroduce a
+`validAudiences`-style list — that shape is what GHSA-p2fr-6hmx-4528 was about.
 
 Do NOT hand-roll bearer validation. Do NOT bypass the auth guard for
 "convenience." API keys are NOT used here: Claude connects over OAuth, and the

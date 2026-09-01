@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AuditRecorder, Auth, Db } from "@hejmly/core/server";
 import { createAuditRecorder } from "@hejmly/core/server";
-import { withTestAuth } from "@hejmly/core/server/test";
+import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { parseUserId, type UserId } from "@hejmly/core/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -33,7 +33,10 @@ const noopCleanup = createStubCleanup().scheduler;
 
 const seedUser = async (auth: Auth): Promise<UserId> => {
   const ctx = await auth.$context;
-  const user = await ctx.internalAdapter.createUser({ name: "Basile", email: TEST_EMAIL });
+  const user = await ctx.internalAdapter.createUser(
+    { name: "Basile", email: TEST_EMAIL },
+    googleProvisioningSource,
+  );
   return parseUserId(user.id);
 };
 

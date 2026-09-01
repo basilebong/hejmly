@@ -1,4 +1,5 @@
-import { mcpHandler } from "@better-auth/oauth-provider";
+import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
+import { isAPIError } from "better-auth/api";
 import { parseUserId, type UserId } from "../../shared/index.ts";
 
 export type McpAuthConfig = {
@@ -21,21 +22,33 @@ export const deriveMcpAuthConfig = (baseURL: string, jwksOrigin: string): McpAut
 
 export type AuthedMcpHandler = (req: Request, actor: UserId) => Promise<Response>;
 
-export const createMcpAuthGuard =
-  (config: McpAuthConfig) =>
-  (handler: AuthedMcpHandler): ((req: Request) => Promise<Response>) =>
-    mcpHandler(
-      {
-        verifyOptions: { issuer: config.issuer, audience: config.audience },
-        jwksUrl: config.jwksUrl,
-      },
-      (req, jwt) => {
-        if (typeof jwt.sub !== "string") {
-          return new Response(JSON.stringify({ error: "invalid_token" }), {
-            status: 401,
-            headers: { "content-type": "application/json" },
-          });
-        }
-        return handler(req, parseUserId(jwt.sub));
-      },
-    );
+const invalidToken = (): Response =>
+  new Response(JSON.stringify({ error: "invalid_token" }), {
+    status: 401,
+    headers: { "content-type": "application/json" },
+  });
+
+export const createMcpAuthGuard = (config: McpAuthConfig) => {
+  const { verifyAccessTokenRequest } = oauthProviderResourceClient().getActions();
+
+  return (handler: AuthedMcpHandler): ((req: Request) => Promise<Response>) =>
+    async (req) => {
+      try {
+        const jwt = await verifyAccessTokenRequest(req, {
+          verifyOptions: { issuer: config.issuer, audience: config.audience },
+          jwksUrl: config.jwksUrl,
+        });
+        if (typeof jwt.sub !== "string") return invalidToken();
+        return await handler(req, parseUserId(jwt.sub));
+      } catch (error) {
+        // verifyAccessTokenRequest rejects with an APIError already carrying the
+        // RFC 6750 / RFC 9728 `WWW-Authenticate` challenge that points MCP clients
+        // at our protected-resource metadata. Anything else is ours to surface.
+        if (!isAPIError(error)) throw error;
+        return new Response(error.message, {
+          status: error.statusCode,
+          headers: error.headers,
+        });
+      }
+    };
+};
