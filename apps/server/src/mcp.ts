@@ -15,6 +15,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 export type McpDeps = {
+  authHandler: (req: Request) => Promise<Response>;
   baseURL: string;
   jwksOrigin: string;
   allowedHosts: readonly string[];
@@ -25,6 +26,7 @@ export type McpDeps = {
 };
 
 export const mountMcp = ({
+  authHandler,
   baseURL,
   jwksOrigin,
   allowedHosts,
@@ -41,17 +43,23 @@ export const mountMcp = ({
     }, req),
   );
 
-  const authServerMetadata = createAuthServerMetadataHandler(baseURL);
+  const authServerMetadata = createAuthServerMetadataHandler(baseURL, authHandler);
   const protectedResourceMetadata = createProtectedResourceMetadataHandler(
     config.audience,
     config.issuer,
   );
 
   return new Hono()
-    .get("/.well-known/oauth-authorization-server", () => authServerMetadata())
-    .get("/.well-known/oauth-authorization-server/api/auth", () => authServerMetadata())
-    .get("/.well-known/openid-configuration", () => authServerMetadata())
-    .get("/.well-known/openid-configuration/api/auth", () => authServerMetadata())
+    .get("/.well-known/oauth-authorization-server", () =>
+      authServerMetadata("oauth-authorization-server"),
+    )
+    .get("/.well-known/oauth-authorization-server/api/auth", () =>
+      authServerMetadata("oauth-authorization-server"),
+    )
+    .get("/.well-known/openid-configuration", () => authServerMetadata("openid-configuration"))
+    .get("/.well-known/openid-configuration/api/auth", () =>
+      authServerMetadata("openid-configuration"),
+    )
     .get("/.well-known/oauth-protected-resource", () => protectedResourceMetadata())
     .get("/.well-known/oauth-protected-resource/mcp", () => protectedResourceMetadata())
     .use(

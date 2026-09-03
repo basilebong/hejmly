@@ -7,7 +7,7 @@ import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
 import type { Auth, Db } from "@hejmly/core/server";
 import { createAssistantsService, createAuditRecorder } from "@hejmly/core/server";
-import { withTestAuth } from "@hejmly/core/server/test";
+import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { createApp } from "./composition.ts";
 
 const noopCleanup: CleanupScheduler = {
@@ -80,10 +80,13 @@ describe("composition", () => {
       { allowedEmails: "basile@example.com" },
       async ({ auth, db, signSessionCookie }) => {
         const ctx = await auth.$context;
-        const user = await ctx.internalAdapter.createUser({
-          name: "Basile",
-          email: "basile@example.com",
-        });
+        const user = await ctx.internalAdapter.createUser(
+          {
+            name: "Basile",
+            email: "basile@example.com",
+          },
+          googleProvisioningSource,
+        );
         const sessionRow = await ctx.internalAdapter.createSession(user.id);
         const signed = await signSessionCookie(sessionRow.token);
 
@@ -113,10 +116,13 @@ describe("composition", () => {
       { allowedEmails: "basile@example.com" },
       async ({ auth, db, signSessionCookie }) => {
         const ctx = await auth.$context;
-        const user = await ctx.internalAdapter.createUser({
-          name: "Basile",
-          email: "basile@example.com",
-        });
+        const user = await ctx.internalAdapter.createUser(
+          {
+            name: "Basile",
+            email: "basile@example.com",
+          },
+          googleProvisioningSource,
+        );
         const sessionRow = await ctx.internalAdapter.createSession(user.id);
         const signed = await signSessionCookie(sessionRow.token);
 
@@ -154,6 +160,40 @@ describe("composition", () => {
         registration_endpoint: "http://localhost:5173/api/auth/oauth2/register",
         code_challenge_methods_supported: ["S256"],
       });
+    });
+  });
+
+  // The root-level document must be the plugin's own, not a copy of it: a copy
+  // silently under-advertises whatever the plugin gains next.
+  test("GET /.well-known/oauth-authorization-server re-serves the plugin's own document", async () => {
+    await withTestAuth({}, async ({ auth, db }) => {
+      const app = appFor(auth, db);
+      const res = await app.request("/.well-known/oauth-authorization-server");
+      expect(res.status).toBe(200);
+      const published = await res.json();
+      const upstream = await (
+        await auth.handler(
+          new Request("http://localhost:5173/api/auth/.well-known/oauth-authorization-server"),
+        )
+      ).json();
+      expect(published).toEqual(upstream);
+      expect(published).toMatchObject({ issuer: "http://localhost:5173/api/auth" });
+    });
+  });
+
+  test("GET /.well-known/openid-configuration re-serves the plugin's OIDC document", async () => {
+    await withTestAuth({}, async ({ auth, db }) => {
+      const app = appFor(auth, db);
+      const res = await app.request("/.well-known/openid-configuration");
+      expect(res.status).toBe(200);
+      const published = await res.json();
+      const upstream = await (
+        await auth.handler(
+          new Request("http://localhost:5173/api/auth/.well-known/openid-configuration"),
+        )
+      ).json();
+      expect(published).toEqual(upstream);
+      expect(published).toMatchObject({ issuer: "http://localhost:5173/api/auth" });
     });
   });
 
@@ -219,10 +259,13 @@ describe("composition", () => {
     await withTestAuth({ allowedEmails: "basile@example.com" }, async ({ auth, db }) => {
       const ctx = await auth.$context;
       await expect(
-        ctx.internalAdapter.createUser({
-          name: "Stranger",
-          email: "stranger@example.com",
-        }),
+        ctx.internalAdapter.createUser(
+          {
+            name: "Stranger",
+            email: "stranger@example.com",
+          },
+          googleProvisioningSource,
+        ),
       ).rejects.toThrow(/allowlist/);
 
       const userCount = db.$client.query("SELECT COUNT(*) AS n FROM users").get();

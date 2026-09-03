@@ -16,9 +16,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.6.25",
+    "@better-auth/oauth-provider": "1.7.2",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "better-auth": "1.6.25",
+    "better-auth": "1.7.2",
     "drizzle-orm": "0.45.2",
     "hono": "4.12.34",
     "valibot": "1.4.2"

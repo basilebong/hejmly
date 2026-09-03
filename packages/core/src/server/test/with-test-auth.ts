@@ -43,3 +43,11 @@ export const withTestAuth = async <T>(
 
   return fn({ auth, db, signSessionCookie });
 };
+
+// Better Auth 1.7 requires every `internalAdapter.createUser` call to declare how
+// the user was provisioned. Hejmly only ever creates users through the Google
+// social provider, so tests that seed a user directly must say the same thing.
+export const googleProvisioningSource = {
+  method: "oauth",
+  oauth: { providerId: "google" },
+} as const;

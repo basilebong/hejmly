@@ -62,6 +62,7 @@ export const createApp = ({
     .route(
       "/",
       mountMcp({
+        authHandler: (req) => auth.handler(req),
         baseURL,
         jwksOrigin,
         allowedHosts,

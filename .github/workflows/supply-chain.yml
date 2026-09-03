@@ -42,16 +42,11 @@ jobs:
         with:
           fail-on-severity: moderate
           comment-summary-in-pr: on-failure
-          # Mirrors the auditConfig.ignoreGhsas entry in pnpm-workspace.yaml — this action
-          # does not read pnpm's config, so an exception has to be declared in both places
-          # or the two gates disagree. Full justification lives next to that entry; in
-          # short: @better-auth/oauth-provider mints unbound tokens with the whole
-          # validAudiences list as audience, which needs a SECOND audience to exploit, and
-          # createAuth configures exactly one. Patched only in a 1.7.0 prerelease that
-          # peer-requires the entire auth stack move with it.
-          # DELETE FROM BOTH FILES TOGETHER when 1.7.0 is stable, or if a second entry is
-          # ever added to validAudiences.
-          allow-ghsas: GHSA-p2fr-6hmx-4528
+          # No allow-ghsas. There is no advisory exception: the last one
+          # (GHSA-p2fr-6hmx-4528) was cleared by better-auth 1.7.2, which replaced
+          # validAudiences with the per-client resource registry. Keep this list absent —
+          # any entry here must be mirrored in pnpm-workspace.yaml's auditConfig or the
+          # two gates disagree.
           # MPL-2.0: lightningcss (Tailwind v4 CSS pipeline, stack-locked). Use unmodified at build time;
           #   MPL §3.3 explicitly allows combining unmodified MPL files into a Larger Work under any license.
           # CC-BY-4.0: caniuse-lite (browser-support dataset pulled by Babel→browserslist). Build-time data only,
@@ -63,8 +58,11 @@ jobs:
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, MPL-2.0, CC-BY-4.0, BlueOak-1.0.0
           # rou3 (Hono router): package.json declares "license": "MIT" and ships an MIT LICENSE file;
           #   GitHub's scanner spuriously reports "MIT AND MS-PL" — verified false-positive against upstream source.
-          # @better-fetch/fetch (better-auth HTTP client): package.json missing license field, but the published
-          #   tarball ships an MIT LICENSE (copyright Bereket Engida). Verified in node_modules @ 1.1.21.
+          # @better-fetch/fetch (better-auth HTTP client): kept for GitHub's license data, not for the package's
+          #   own metadata — as of 1.3.1 its package.json DOES declare "license": "MIT", so the missing-field
+          #   problem this entry was written for (at 1.1.21) is fixed upstream. Its version is unchanged by this
+          #   PR, so dependency-review does not re-evaluate it here and dropping the entry could not be verified.
+          #   Remove it from a PR that actually bumps the package, where CI can prove the entry is unnecessary.
           # json-schema-typed (TypeScript types for JSON Schema, pulled in transitively by
           #   @modelcontextprotocol/sdk via bunqueue): package.json declares "license": "BSD-2-Clause" and ships
           #   a pure BSD-2-Clause LICENSE.md; GitHub's scanner spuriously appends "AND JSON" — verified false-positive

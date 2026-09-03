@@ -60,8 +60,24 @@ gains a real id.
 
 ## AST checks (`pnpm check:source`)
 
-Implemented in `scripts/check-source.ts` (Bun + TypeScript compiler API).
+Implemented in `scripts/check-source.ts` (Bun + the TypeScript 7 API).
 One rule:
+
+TypeScript 7 dropped the classic compiler API from the package root, so the
+script uses `typescript/unstable/ast` (node types, `SyntaxKind`, and the
+`forEachChild` / `getStart` methods on nodes) plus `typescript/unstable/async`
+for the `Program` — an AST now only comes out of a program, and the *sync* API
+reaches for a Node stream internal that Bun does not expose, so the async one is
+the only option under our runtime. `unstable/` means these imports can break on
+a TypeScript minor; that is the cost of the rule and the reason it is pinned to
+an exact version.
+
+Because a program is required and `drizzle.config.ts`, `better-auth.config.ts`
+and `scripts/` belong to no referenced project, the script synthesises a
+tsconfig listing exactly the files to check and serves it through the API's
+virtual-FS hooks (everything else falls through to the real disk). A file the
+program does not load is reported as an error rather than skipped — a silently
+unchecked file would quietly gut the rule.
 
 ### `no-bare-as`
 
