@@ -17,6 +17,12 @@ export type ResourceBackfill = {
 // The seeded row mirrors what the plugin's own seeding writes (name defaults to the
 // identifier), and `resourceSeedMode` defaults to "insertOnly", so the plugin leaves
 // this row alone once it boots.
+//
+// Changing BETTER_AUTH_URL registers a second resource and leaves every client linked
+// to both. Nothing here or in the plugin removes the old row. That is inert — a token
+// minted for the old identifier carries the old `aud`, which the MCP guard checks
+// against the current base URL and refuses — but the rows do accumulate, so a
+// deployment that moves to a real domain wants them cleaned out by hand.
 export const linkExistingClientsToResource = async (
   db: Db,
   resourceIdentifier: string,

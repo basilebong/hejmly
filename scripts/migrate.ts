@@ -30,7 +30,10 @@ if (env.BETTER_AUTH_URL === undefined) {
 } else {
   const mcpResource = `${env.BETTER_AUTH_URL}/mcp`;
   const backfill = await linkExistingClientsToResource(db, mcpResource);
-  if (backfill.resourceCreated || backfill.clientsLinked > 0) {
+  if (backfill.resourceCreated) {
+    console.info(`migrate: registered the MCP resource ${mcpResource}`);
+  }
+  if (backfill.clientsLinked > 0) {
     console.info(
       `migrate: linked ${backfill.clientsLinked} existing OAuth client(s) to ${mcpResource}`,
     );

@@ -36,7 +36,6 @@ CREATE TABLE `oauth_resources` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX `oauth_resources_identifier_unique` ON `oauth_resources` (`identifier`);--> statement-breakpoint
 DROP INDEX `accounts_provider_account_unique`;--> statement-breakpoint
-PRAGMA foreign_keys=OFF;--> statement-breakpoint
 CREATE TABLE `__new_accounts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`issuer` text NOT NULL,
@@ -60,6 +59,13 @@ DROP TABLE `accounts`;--> statement-breakpoint
 ALTER TABLE `__new_accounts` RENAME TO `accounts`;--> statement-breakpoint
 CREATE INDEX `accounts_userId_idx` ON `accounts` (`user_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `accounts_issuer_accountId_uidx` ON `accounts` (`issuer`,`account_id`);--> statement-breakpoint
+-- ORDER IS LOAD-BEARING: oauth_access_tokens must be stashed and dropped BEFORE
+-- oauth_refresh_tokens and oauth_clients are rebuilt. Its refresh_id / client_id
+-- foreign keys are ON DELETE CASCADE, and dropping a parent fires them, so
+-- rebuilding a parent while this table still exists deletes every access token.
+-- PRAGMA foreign_keys cannot prevent it: drizzle runs each migration inside a
+-- transaction, where that pragma is a no-op. The stash has no foreign keys, so it
+-- survives the parent rebuilds and is restored at the end of this file.
 DELETE FROM `oauth_access_tokens` WHERE "token" IS NULL;--> statement-breakpoint
 CREATE TABLE `__stash_oauth_access_tokens` AS SELECT * FROM `oauth_access_tokens`;--> statement-breakpoint
 DROP TABLE `oauth_access_tokens`;--> statement-breakpoint
@@ -155,5 +161,4 @@ CREATE INDEX `oauthAccessTokens_clientId_idx` ON `oauth_access_tokens` (`client_
 CREATE INDEX `oauthAccessTokens_sessionId_idx` ON `oauth_access_tokens` (`session_id`);--> statement-breakpoint
 CREATE INDEX `oauthAccessTokens_userId_idx` ON `oauth_access_tokens` (`user_id`);--> statement-breakpoint
 CREATE INDEX `oauthAccessTokens_authorizationCodeId_idx` ON `oauth_access_tokens` (`authorization_code_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessTokens_refreshId_idx` ON `oauth_access_tokens` (`refresh_id`);--> statement-breakpoint
-PRAGMA foreign_keys=ON;
+CREATE INDEX `oauthAccessTokens_refreshId_idx` ON `oauth_access_tokens` (`refresh_id`);

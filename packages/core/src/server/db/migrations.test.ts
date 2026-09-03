@@ -6,10 +6,22 @@ import { fileURLToPath } from "node:url";
 
 const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../drizzle");
 
+const MIGRATION_UNDER_TEST = "0007";
+
 const sqlFiles = (): string[] =>
   readdirSync(migrationsFolder)
     .filter((f) => f.endsWith(".sql"))
     .sort();
+
+// Selecting by sort order rather than "everything except 0007" so that adding an
+// 0008 does not silently apply it to the pre-upgrade database ahead of 0007.
+const migrationsBefore = (tag: string): string[] => sqlFiles().filter((f) => f < tag);
+
+const migrationUnderTest = (tag: string): string => {
+  const file = sqlFiles().find((f) => f.startsWith(tag));
+  if (file === undefined) throw new Error(`no migration matching ${tag}`);
+  return file;
+};
 
 const applyMigration = (db: Database, file: string): void => {
   for (const statement of readFileSync(`${migrationsFolder}/${file}`, "utf8").split(
@@ -37,7 +49,7 @@ const schemaOf = (db: Database): string =>
 const upgradedFromPreviousRelease = (): Database => {
   const db = new Database(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
-  for (const f of sqlFiles().filter((f) => !f.startsWith("0007"))) applyMigration(db, f);
+  for (const f of migrationsBefore(MIGRATION_UNDER_TEST)) applyMigration(db, f);
 
   db.exec(
     `INSERT INTO users (id,name,email,email_verified,created_at,updated_at) VALUES ('u1','B','b@e.com',1,1750000000000,1750000000000)`,
@@ -62,7 +74,7 @@ const upgradedFromPreviousRelease = (): Database => {
   );
 
   db.exec("BEGIN");
-  applyMigration(db, sqlFiles().find((f) => f.startsWith("0007")) ?? "");
+  applyMigration(db, migrationUnderTest(MIGRATION_UNDER_TEST));
   db.exec("COMMIT");
   return db;
 };
