@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { CleanupScheduler } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
-import { createAssistantsService, createAuditRecorder, type Db } from "@hejmly/core/server";
+import {
+  createAssistantsService,
+  createAuditRecorder,
+  type Db,
+  linkExistingClientsToResource,
+} from "@hejmly/core/server";
+import { oauthClientResources } from "@hejmly/core/server/schema";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { type AppType, createApp } from "./composition.ts";
 
@@ -109,16 +115,13 @@ const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<voi
 
 type OAuthGrant = { clientId: string; accessToken: string };
 
-const runClaudeOAuthFlow = async (baseURL: string, cookie: string): Promise<OAuthGrant> => {
-  const redirectUri = `${baseURL}/oauth/callback`;
-  const resource = `${baseURL}/mcp`;
-
+const registerNativeClient = async (baseURL: string): Promise<string> => {
   const register = await fetch(`${baseURL}/api/auth/oauth2/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       client_name: "Claude",
-      redirect_uris: [redirectUri],
+      redirect_uris: [`${baseURL}/oauth/callback`],
       // Better Auth 1.7 enforces OIDC DCR application_type rules: a "web" client
       // (the default) may only use https redirect URIs on non-loopback hosts.
       // This flow redirects to http://localhost, which is a native client.
@@ -133,6 +136,35 @@ const runClaudeOAuthFlow = async (baseURL: string, cookie: string): Promise<OAut
   if (register.status !== 201) throw new Error(`register failed: ${register.status}`);
   const clientId: unknown = (await register.json()).client_id;
   if (typeof clientId !== "string") throw new Error("missing client_id");
+  return clientId;
+};
+
+const authorizeForMcp = async (
+  baseURL: string,
+  cookie: string,
+  clientId: string,
+): Promise<Response> => {
+  const { challenge } = await pkce();
+  return fetch(
+    `${baseURL}/api/auth/oauth2/authorize?${new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: `${baseURL}/oauth/callback`,
+      response_type: "code",
+      scope: "openid profile email",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      state: "xyz",
+      resource: `${baseURL}/mcp`,
+    })}`,
+    { headers: { cookie }, redirect: "manual" },
+  );
+};
+
+const runClaudeOAuthFlow = async (baseURL: string, cookie: string): Promise<OAuthGrant> => {
+  const redirectUri = `${baseURL}/oauth/callback`;
+  const resource = `${baseURL}/mcp`;
+
+  const clientId = await registerNativeClient(baseURL);
 
   const { verifier, challenge } = await pkce();
   const authorize = await fetch(
@@ -257,6 +289,56 @@ describe("MCP over OAuth (end-to-end)", () => {
         method: "tools/list",
       });
       expect(afterRevoke.status).toBe(200);
+    });
+  });
+});
+
+describe("MCP over OAuth (resource binding)", () => {
+  test("a resource the server never registered is refused", async () => {
+    await withMcpServer(async ({ baseURL, cookie }) => {
+      const clientId = await registerNativeClient(baseURL);
+      const { challenge } = await pkce();
+
+      const authorize = await fetch(
+        `${baseURL}/api/auth/oauth2/authorize?${new URLSearchParams({
+          client_id: clientId,
+          redirect_uri: `${baseURL}/oauth/callback`,
+          response_type: "code",
+          scope: "openid profile email",
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+          state: "xyz",
+          resource: "https://evil.example.com/mcp",
+        })}`,
+        { headers: { cookie }, redirect: "manual" },
+      );
+
+      expect(authorize.status).toBe(302);
+      const location = decodeURIComponent(authorize.headers.get("location") ?? "");
+      expect(location).toContain("error=invalid_target");
+      expect(location).not.toContain("/consent");
+    });
+  });
+
+  // The 1.6 -> 1.7 upgrade leaves pre-existing clients with no row in
+  // oauth_client_resources, which locks them out until the migration backfills one.
+  test("a client with no resource link is refused, and the backfill restores it", async () => {
+    await withMcpServer(async ({ baseURL, cookie, db }) => {
+      const clientId = await registerNativeClient(baseURL);
+      await db.delete(oauthClientResources);
+
+      const refused = await authorizeForMcp(baseURL, cookie, clientId);
+      expect(refused.status).toBe(302);
+      expect(decodeURIComponent(refused.headers.get("location") ?? "")).toContain(
+        "error=invalid_target",
+      );
+
+      const result = await linkExistingClientsToResource(db, `${baseURL}/mcp`);
+      expect(result.clientsLinked).toBe(1);
+
+      const restored = await authorizeForMcp(baseURL, cookie, clientId);
+      expect(restored.status).toBe(302);
+      expect(restored.headers.get("location") ?? "").toContain("/consent");
     });
   });
 });

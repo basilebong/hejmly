@@ -25,7 +25,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 
 const collectFiles = (): string[] => {
-  if (args.length > 0) return args.map((f) => resolve(repoRoot, f));
+  if (args.length > 0) return args.map((f) => resolve(process.cwd(), f));
   const glob = new Bun.Glob("**/*.{ts,tsx}");
   const out: string[] = [];
   for (const f of glob.scanSync(repoRoot)) {
@@ -118,24 +118,30 @@ const api = new API({
 
 const all: Violation[] = [];
 const missing: string[] = [];
+let projectLoaded = false;
 try {
   const snapshot = await api.updateSnapshot({ openProjects: [virtualConfigPath] });
   const project = snapshot.getProjects()[0];
-  if (project === undefined) {
-    console.error("check-source: failed to load the synthesised project");
-    process.exit(1);
-  }
-  for (const file of files) {
-    const sf = await project.program.getSourceFile(file);
-    // A file silently absent from the program would be a silently unchecked file.
-    if (sf === undefined) {
-      missing.push(file);
-      continue;
+  if (project !== undefined) {
+    projectLoaded = true;
+    for (const file of files) {
+      const sf = await project.program.getSourceFile(file);
+      // A file silently absent from the program would be a silently unchecked file.
+      if (sf === undefined) {
+        missing.push(file);
+        continue;
+      }
+      all.push(...checkSourceFile(file, sf));
     }
-    all.push(...checkSourceFile(file, sf));
   }
 } finally {
+  // process.exit skips finally, so every exit below happens after this close.
   await api.close();
+}
+
+if (!projectLoaded) {
+  console.error("check-source: failed to load the synthesised project");
+  process.exit(1);
 }
 
 if (missing.length > 0) {

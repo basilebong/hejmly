@@ -168,26 +168,32 @@ describe("composition", () => {
   test("GET /.well-known/oauth-authorization-server re-serves the plugin's own document", async () => {
     await withTestAuth({}, async ({ auth, db }) => {
       const app = appFor(auth, db);
-      const published = await (await app.request("/.well-known/oauth-authorization-server")).json();
+      const res = await app.request("/.well-known/oauth-authorization-server");
+      expect(res.status).toBe(200);
+      const published = await res.json();
       const upstream = await (
         await auth.handler(
           new Request("http://localhost:5173/api/auth/.well-known/oauth-authorization-server"),
         )
       ).json();
       expect(published).toEqual(upstream);
+      expect(published).toMatchObject({ issuer: "http://localhost:5173/api/auth" });
     });
   });
 
   test("GET /.well-known/openid-configuration re-serves the plugin's OIDC document", async () => {
     await withTestAuth({}, async ({ auth, db }) => {
       const app = appFor(auth, db);
-      const published = await (await app.request("/.well-known/openid-configuration")).json();
+      const res = await app.request("/.well-known/openid-configuration");
+      expect(res.status).toBe(200);
+      const published = await res.json();
       const upstream = await (
         await auth.handler(
           new Request("http://localhost:5173/api/auth/.well-known/openid-configuration"),
         )
       ).json();
       expect(published).toEqual(upstream);
+      expect(published).toMatchObject({ issuer: "http://localhost:5173/api/auth" });
     });
   });
 

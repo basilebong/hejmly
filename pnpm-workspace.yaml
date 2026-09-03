@@ -33,6 +33,32 @@ overrides:
   # Remove once drizzle-kit drops the @esbuild-kit chain.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
 
+  # The three below are open advisories with no upgrade path: vite-plugin-pwa 1.3.0
+  # and @modelcontextprotocol/sdk 1.30.0 are both already the latest release, so the
+  # vulnerable packages can only be lifted at the leaf. Each fix version is younger
+  # than the 30-day cooldown we apply to routine bumps; a patch for an OPEN advisory
+  # is the standing exception to that, the same call taken for better-auth 1.7.2.
+  # Drop each one once its parent ships a range that already excludes the bad
+  # versions.
+
+  # browserslist <=4.28.7 has an unbounded cache (OOM) and a prototype write via
+  # untrusted browserslist-stats.json. Build-time only, through
+  # vite-plugin-pwa > workbox-build. Two separate parents pull it in, and scoping
+  # means both have to be named: lifting only one leaves the other on 4.28.2.
+  "@babel/helper-compilation-targets>browserslist": ">=4.28.7"
+  "core-js-compat>browserslist": ">=4.28.7"
+
+  # fast-uri <3.1.6 has an SSRF via malformed IPv6 normalisation and host confusion
+  # via skipped IDN canonicalisation. Reached through workbox-build > ajv at build
+  # time. Pinned exactly rather than as a range: 3.1.7 was published today and would
+  # be refused by minimumReleaseAge, and 4.x is a major this chain has not adopted.
+  "ajv>fast-uri": "3.1.6"
+
+  # qs <6.16.0 is reached through @modelcontextprotocol/sdk > express. The SDK uses
+  # its own Web-standard transport here rather than express, but the dependency is
+  # installed, so the advisory is still reported against this tree.
+  "express>qs": ">=6.16.0"
+
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
 # `schema.minLength` as optional WITHOUT `| undefined`, while the sibling
 # `format`/`description`/`default`/`example` in the same object do include it.

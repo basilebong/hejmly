@@ -28,6 +28,10 @@ export const createAuth = (opts: CreateAuthOptions) => {
       // the server knows. This replaces 1.6's `validAudiences`, whose unbound
       // tokens carried the whole list (GHSA-p2fr-6hmx-4528).
       resources: [opts.mcpResource],
+      // Defaults to true in 1.7, and stated here because the whole point of the
+      // upgrade rests on it: without per-client enforcement a token is no longer
+      // bound to the one resource it was issued for.
+      enforcePerClientResources: true,
       // Hejmly serves exactly one protected resource, and any assistant that
       // completes DCR is here to reach it, so every registered client is linked
       // to it. Per-client enforcement stays on: a client still cannot request a

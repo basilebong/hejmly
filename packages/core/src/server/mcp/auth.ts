@@ -22,6 +22,11 @@ export const deriveMcpAuthConfig = (baseURL: string, jwksOrigin: string): McpAut
 
 export type AuthedMcpHandler = (req: Request, actor: UserId) => Promise<Response>;
 
+// Derived from the verifier rather than imported from jose, which is a transitive
+// dependency of the auth stack and not one of ours to import directly.
+type ResourceActions = ReturnType<ReturnType<typeof oauthProviderResourceClient>["getActions"]>;
+type VerifiedToken = Awaited<ReturnType<ResourceActions["verifyAccessTokenRequest"]>>;
+
 const invalidToken = (): Response =>
   new Response(JSON.stringify({ error: "invalid_token" }), {
     status: 401,
@@ -33,13 +38,14 @@ export const createMcpAuthGuard = (config: McpAuthConfig) => {
 
   return (handler: AuthedMcpHandler): ((req: Request) => Promise<Response>) =>
     async (req) => {
+      let jwt: VerifiedToken;
+      // Only the verification is guarded. Running the handler inside this try would
+      // let an APIError thrown by a tool be reported to the client as a bad token.
       try {
-        const jwt = await verifyAccessTokenRequest(req, {
+        jwt = await verifyAccessTokenRequest(req, {
           verifyOptions: { issuer: config.issuer, audience: config.audience },
           jwksUrl: config.jwksUrl,
         });
-        if (typeof jwt.sub !== "string") return invalidToken();
-        return await handler(req, parseUserId(jwt.sub));
       } catch (error) {
         // verifyAccessTokenRequest rejects with an APIError already carrying the
         // RFC 6750 / RFC 9728 `WWW-Authenticate` challenge that points MCP clients
@@ -50,5 +56,8 @@ export const createMcpAuthGuard = (config: McpAuthConfig) => {
           headers: error.headers,
         });
       }
+
+      if (typeof jwt.sub !== "string") return invalidToken();
+      return await handler(req, parseUserId(jwt.sub));
     };
 };

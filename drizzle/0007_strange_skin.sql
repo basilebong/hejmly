@@ -60,39 +60,9 @@ DROP TABLE `accounts`;--> statement-breakpoint
 ALTER TABLE `__new_accounts` RENAME TO `accounts`;--> statement-breakpoint
 CREATE INDEX `accounts_userId_idx` ON `accounts` (`user_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `accounts_issuer_accountId_uidx` ON `accounts` (`issuer`,`account_id`);--> statement-breakpoint
-CREATE TABLE `__new_oauth_access_tokens` (
-	`id` text PRIMARY KEY NOT NULL,
-	`token` text NOT NULL,
-	`client_id` text NOT NULL,
-	`session_id` text,
-	`user_id` text,
-	`reference_id` text,
-	`authorization_code_id` text,
-	`resources` text,
-	`requested_user_info_claims` text,
-	`refresh_id` text,
-	`expires_at` integer NOT NULL,
-	`created_at` integer NOT NULL,
-	`revoked` integer,
-	`confirmation` text,
-	`scopes` text NOT NULL,
-	FOREIGN KEY (`client_id`) REFERENCES `oauth_clients`(`client_id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE set null,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`refresh_id`) REFERENCES `oauth_refresh_tokens`(`id`) ON UPDATE no action ON DELETE cascade
-);
---> statement-breakpoint
 DELETE FROM `oauth_access_tokens` WHERE "token" IS NULL;--> statement-breakpoint
-INSERT INTO `__new_oauth_access_tokens`("id", "token", "client_id", "session_id", "user_id", "reference_id", "authorization_code_id", "resources", "requested_user_info_claims", "refresh_id", "expires_at", "created_at", "revoked", "confirmation", "scopes") SELECT "id", "token", "client_id", "session_id", "user_id", "reference_id", NULL, NULL, NULL, "refresh_id", COALESCE("expires_at", "created_at", 0), COALESCE("created_at", 0), NULL, NULL, "scopes" FROM `oauth_access_tokens`;--> statement-breakpoint
+CREATE TABLE `__stash_oauth_access_tokens` AS SELECT * FROM `oauth_access_tokens`;--> statement-breakpoint
 DROP TABLE `oauth_access_tokens`;--> statement-breakpoint
-ALTER TABLE `__new_oauth_access_tokens` RENAME TO `oauth_access_tokens`;--> statement-breakpoint
-PRAGMA foreign_keys=ON;--> statement-breakpoint
-CREATE UNIQUE INDEX `oauth_access_tokens_token_unique` ON `oauth_access_tokens` (`token`);--> statement-breakpoint
-CREATE INDEX `oauthAccessTokens_clientId_idx` ON `oauth_access_tokens` (`client_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessTokens_sessionId_idx` ON `oauth_access_tokens` (`session_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessTokens_userId_idx` ON `oauth_access_tokens` (`user_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessTokens_authorizationCodeId_idx` ON `oauth_access_tokens` (`authorization_code_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessTokens_refreshId_idx` ON `oauth_access_tokens` (`refresh_id`);--> statement-breakpoint
 CREATE TABLE `__new_oauth_consents` (
 	`id` text PRIMARY KEY NOT NULL,
 	`client_id` text NOT NULL,
@@ -155,4 +125,35 @@ ALTER TABLE `oauth_clients` ADD `jwks` text;--> statement-breakpoint
 ALTER TABLE `oauth_clients` ADD `jwks_uri` text;--> statement-breakpoint
 ALTER TABLE `oauth_clients` ADD `dpop_bound_access_tokens` integer DEFAULT false;--> statement-breakpoint
 ALTER TABLE `oauth_clients` DROP COLUMN `public`;--> statement-breakpoint
-ALTER TABLE `oauth_clients` DROP COLUMN `type`;
+ALTER TABLE `oauth_clients` DROP COLUMN `type`;--> statement-breakpoint
+CREATE TABLE `oauth_access_tokens` (
+	`id` text PRIMARY KEY NOT NULL,
+	`token` text NOT NULL,
+	`client_id` text NOT NULL,
+	`session_id` text,
+	`user_id` text,
+	`reference_id` text,
+	`authorization_code_id` text,
+	`resources` text,
+	`requested_user_info_claims` text,
+	`refresh_id` text,
+	`expires_at` integer NOT NULL,
+	`created_at` integer NOT NULL,
+	`revoked` integer,
+	`confirmation` text,
+	`scopes` text NOT NULL,
+	FOREIGN KEY (`client_id`) REFERENCES `oauth_clients`(`client_id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`session_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`refresh_id`) REFERENCES `oauth_refresh_tokens`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+INSERT INTO `oauth_access_tokens`("id", "token", "client_id", "session_id", "user_id", "reference_id", "authorization_code_id", "resources", "requested_user_info_claims", "refresh_id", "expires_at", "created_at", "revoked", "confirmation", "scopes") SELECT "id", "token", "client_id", "session_id", "user_id", "reference_id", NULL, NULL, NULL, "refresh_id", COALESCE("expires_at", "created_at", 0), COALESCE("created_at", 0), NULL, NULL, "scopes" FROM `__stash_oauth_access_tokens`;--> statement-breakpoint
+DROP TABLE `__stash_oauth_access_tokens`;--> statement-breakpoint
+CREATE UNIQUE INDEX `oauth_access_tokens_token_unique` ON `oauth_access_tokens` (`token`);--> statement-breakpoint
+CREATE INDEX `oauthAccessTokens_clientId_idx` ON `oauth_access_tokens` (`client_id`);--> statement-breakpoint
+CREATE INDEX `oauthAccessTokens_sessionId_idx` ON `oauth_access_tokens` (`session_id`);--> statement-breakpoint
+CREATE INDEX `oauthAccessTokens_userId_idx` ON `oauth_access_tokens` (`user_id`);--> statement-breakpoint
+CREATE INDEX `oauthAccessTokens_authorizationCodeId_idx` ON `oauth_access_tokens` (`authorization_code_id`);--> statement-breakpoint
+CREATE INDEX `oauthAccessTokens_refreshId_idx` ON `oauth_access_tokens` (`refresh_id`);--> statement-breakpoint
+PRAGMA foreign_keys=ON;

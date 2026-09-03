@@ -24,10 +24,7 @@ export const createAuthServerMetadataHandler =
         headers: { accept: "application/json" },
       }),
     );
-    return new Response(upstream.body, {
-      status: upstream.status,
-      headers: { ...PUBLIC_HEADERS, "access-control-allow-origin": "*" },
-    });
+    return new Response(upstream.body, { status: upstream.status, headers: PUBLIC_HEADERS });
   };
 
 // RFC 9728 protected-resource metadata describes the resource server, not the
