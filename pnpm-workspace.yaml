@@ -41,7 +41,7 @@ overrides:
   # Drop each one once its parent ships a range that already excludes the bad
   # versions.
 
-  # browserslist <=4.28.7 has an unbounded cache (OOM) and a prototype write via
+  # browserslist <=4.28.6 has an unbounded cache (OOM) and a prototype write via
   # untrusted browserslist-stats.json. Build-time only, through
   # vite-plugin-pwa > workbox-build. Two separate parents pull it in, and scoping
   # means both have to be named: lifting only one leaves the other on 4.28.2.
@@ -54,9 +54,10 @@ overrides:
   # be refused by minimumReleaseAge, and 4.x is a major this chain has not adopted.
   "ajv>fast-uri": "3.1.6"
 
-  # qs <6.16.0 is reached through @modelcontextprotocol/sdk > express. The SDK uses
-  # its own Web-standard transport here rather than express, but the dependency is
-  # installed, so the advisory is still reported against this tree.
+  # qs <6.16.0 has an array-limit bypass via bracket-key comma parsing and two DoS
+  # paths in parse/stringify. Reached through @modelcontextprotocol/sdk > express.
+  # The SDK uses its own Web-standard transport here rather than express, but the
+  # dependency is installed, so the advisory is still reported against this tree.
   "express>qs": ">=6.16.0"
 
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
