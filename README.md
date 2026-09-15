@@ -35,8 +35,7 @@ that requires a separate commercial license (contact us).
   provider (`@better-auth/oauth-provider` + JWT) for MCP clients like Claude
 - **Validation:** Valibot at HTTP boundaries, Zod inside MCP tool defs only
 - **Tests:** `bun:test`; Playwright for end-to-end
-- **Package manager:** pnpm 11 (hardened defaults, see `.npmrc` and
-  `pnpm-workspace.yaml`)
+- **Package manager:** pnpm 11 (hardened defaults, see `pnpm-workspace.yaml`)
 
 ## Layout
 
@@ -104,8 +103,8 @@ pnpm install
 cp .env.example .env
 # edit .env, see "Auth setup" below
 
-# 3. Install git hooks (one-time; lefthook writes .git/hooks/*; `.npmrc`
-#    has `ignore-scripts=true`, so this is NOT done automatically by install)
+# 3. Install git hooks (one-time; lefthook writes .git/hooks/*; pnpm-workspace.yaml
+#    has `ignoreScripts: true`, so this is NOT done automatically by install)
 pnpm hooks:install
 
 # 4. Run pending migrations (auth schema is committed, drizzle/0000_*.sql too)
@@ -269,8 +268,8 @@ The production image runs one Bun process serving `/api/auth/*`, `/api/*`,
 ## Hooks
 
 Managed by [lefthook](https://github.com/evilmartians/lefthook) (`lefthook.yml`).
-Run `pnpm hooks:install` once after `pnpm install` (`.npmrc` has
-`ignore-scripts=true`, so lefthook does NOT install itself automatically).
+Run `pnpm hooks:install` once after `pnpm install` (`pnpm-workspace.yaml` has
+`ignoreScripts: true`, so lefthook does NOT install itself automatically).
 
 `pre-commit` (parallel):
 - Biome lint + format on staged `.ts`/`.tsx`/`.json`/`.css` (auto-fix, re-stages)

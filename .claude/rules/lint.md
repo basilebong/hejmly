@@ -127,5 +127,5 @@ Hooks are managed by [lefthook](https://github.com/evilmartians/lefthook)
 pnpm hooks:install   # one-time: writes .git/hooks/* via `lefthook install`
 ```
 
-`pnpm install` does NOT install hooks automatically — `.npmrc` has
-`ignore-scripts=true` (rule 2 / §8.2). The explicit step is intentional.
+`pnpm install` does NOT install hooks automatically — `pnpm-workspace.yaml` has
+`ignoreScripts: true` (rule 2 / §8.2). The explicit step is intentional.

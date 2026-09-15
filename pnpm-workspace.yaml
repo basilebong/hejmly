@@ -2,15 +2,29 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# pnpm 11 reads only auth and registry settings from .npmrc; every other setting
+# has to live here or in the global config.yaml. These seven moved out of the
+# repo's .npmrc, which is now gone -- it held nothing else. Silently losing them
+# is the failure mode: pnpm 11 does not warn about a pnpm setting left in
+# .npmrc, it just applies its own default, so `ignoreScripts` reverts to running
+# every dependency's install hooks and `autoInstallPeers` reverts to true.
+frozenLockfile: true
+preferFrozenLockfile: true
+ignoreScripts: true
+saveExact: true
+strictPeerDependencies: true
+autoInstallPeers: false
+resolutionMode: highest
+
 # pnpm reads allowBuilds as {packagePattern: boolean} and switches strictly on
 # true/false. It was previously written as an index map ('0': esbuild), whose
 # values are strings, so both entries matched neither case and were dropped --
 # the key resolved to an empty onlyBuiltDependencies and did nothing.
-# It is still inert today because .npmrc sets ignore-scripts=true, which
-# disables dependency lifecycle scripts outright; esbuild and @biomejs/biome
+# It is still inert today because ignoreScripts above disables dependency
+# lifecycle scripts outright; esbuild and @biomejs/biome
 # both work without their postinstall because each resolves its platform binary
 # from an optional dependency. Kept in the parsed form so the allowlist is
-# correct if ignore-scripts is ever relaxed.
+# correct if ignoreScripts is ever relaxed.
 allowBuilds:
   '@biomejs/biome': true
   esbuild: true
