@@ -59,9 +59,13 @@ overrides:
   # hard-pins esbuild ~0.18.20, which carries the dev-server SSRF. drizzle-kit
   # itself already declares ^0.25.4, so only this leaf needs lifting. This is the
   # hard-pin case, so no upstream patch release can ever retire it on its own.
-  # Remove once drizzle-kit drops the @esbuild-kit chain -- still present in
-  # 0.31.10, which is `latest`; drizzle-kit 1.x is rc-only and the stack is
-  # locked to stable.
+  # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.10 still
+  # declares "@esbuild-kit/esm-loader": "^2.5.5", and so does 0.31.11, the newer
+  # `latest`; drizzle-kit 1.x is rc-only and the stack is locked to stable.
+  # Re-tested this cycle by dropping the entry and re-resolving: esbuild 0.18.20
+  # reappears on five paths and GHSA-67mh-4wv8-2f99 comes back moderate. Note the
+  # extra paths -- better-auth pulls drizzle-kit too, so this is no longer a
+  # dev-only chain reachable from the root alone.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
 
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
@@ -73,8 +77,10 @@ overrides:
 # BetterAuthPlugin and `createAuth` fails to compile. The patch adds the missing
 # `| undefined` to those three properties -- strictly widening, and consistent
 # with how the same object already types its other optional fields.
-# better-call 1.4.0 is `latest` and @better-auth/oauth-provider 1.7.2 peer-pins it
-# exactly ("better-call": "1.4.0"), so there is no version to upgrade to. The
+# better-call 1.4.0 is `latest` and @better-auth/oauth-provider peer-pins it
+# exactly ("better-call": "1.4.0") -- in 1.7.2, and unchanged through 1.7.3,
+# 1.7.4 and 1.7.5 -- so there is no version to upgrade to, and no better-auth
+# bump inside or outside the cooldown window would retire this patch. The
 # registry does carry a 2.0.6 under a `release-2.0` dist-tag, but it is not
 # `latest` and the exact peer pin makes it unreachable -- it is not an upgrade
 # path, do not reach for it. Drop this the moment upstream ships the fix; a
