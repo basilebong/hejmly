@@ -8,6 +8,17 @@ packages:
 # is the failure mode: pnpm 11 does not warn about a pnpm setting left in
 # .npmrc, it just applies its own default, so `ignoreScripts` reverts to running
 # every dependency's install hooks and `autoInstallPeers` reverts to true.
+#
+# `ignoreScripts: true` is also what keeps `packageManager` on the pnpm 11 line.
+# pnpm 12 ships as a native binary whose published `bin/pnpm` is a placeholder
+# that its own preinstall script rewrites; its install.js says so outright --
+# "the tradeoff is no fallback when build scripts are blocked (--ignore-scripts,
+# pnpm/Bun default)". pnpm's self-managed install of the version named here
+# inherits this setting, so pinning pnpm@12 leaves the placeholder in
+# ~/.local/share/pnpm/.tools and every later `pnpm` call dies with
+# `bin/pnpm: 4: Syntax error: ")" unexpected`. Verified on 12.1.0, and adding
+# `pnpm: true` to allowBuilds below does not lift it. pnpm 12 needs either this
+# setting relaxed or pnpm installed out of band; neither is worth a minor.
 frozenLockfile: true
 preferFrozenLockfile: true
 ignoreScripts: true
@@ -66,6 +77,11 @@ overrides:
   # reappears on five paths and GHSA-67mh-4wv8-2f99 comes back moderate. Note the
   # extra paths -- better-auth pulls drizzle-kit too, so this is no longer a
   # dev-only chain reachable from the root alone.
+  #
+  # It is also the only override left. The fast-uri and ip-address advisories
+  # this cycle cleared did NOT need one: ajv declares fast-uri ^3.0.1 and
+  # express-rate-limit declares ip-address ^10.2.0, so re-resolving those two
+  # leaves reached 3.1.8 and 10.7.2 unaided.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
 
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
@@ -79,7 +95,7 @@ overrides:
 # with how the same object already types its other optional fields.
 # better-call 1.4.0 is `latest` and @better-auth/oauth-provider peer-pins it
 # exactly ("better-call": "1.4.0") -- in 1.7.2, and unchanged through 1.7.3,
-# 1.7.4 and 1.7.5 -- so there is no version to upgrade to, and no better-auth
+# 1.7.4, 1.7.5 and 1.7.6 -- so there is no version to upgrade to, and no better-auth
 # bump inside or outside the cooldown window would retire this patch. The
 # registry does carry a 2.0.6 under a `release-2.0` dist-tag, but it is not
 # `latest` and the exact peer pin makes it unreachable -- it is not an upgrade

@@ -18,14 +18,14 @@
     "@modelcontextprotocol/sdk": "1.30.0",
     "@hejmly/core": "workspace:*",
     "@radix-ui/react-dropdown-menu": "2.1.24",
-    "bunqueue": "2.8.60",
+    "bunqueue": "2.9.0",
     "clsx": "2.1.1",
     "hono": "4.13.5",
     "tailwind-merge": "3.6.0",
     "ts-pattern": "5.9.0",
     "ulid": "3.0.2",
     "valibot": "1.4.2",
-    "zod": "4.4.3"
+    "zod": "4.5.4"
   },
   "peerDependencies": {
     "@phosphor-icons/react": "^2.1.10",
