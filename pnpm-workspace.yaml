@@ -1,13 +1,31 @@
+# Keep every run of consecutive comment lines inside a mapping at 32 or fewer.
+# pnpm 12's YAML parser fails the whole load at 33 ("too many consecutive comments
+# before resolving collection entry"), and with it every pnpm command -- install,
+# audit, all of them. pnpm 11 parsed any length, so nothing older warns about it.
 packages:
   - "apps/*"
   - "packages/*"
 
-# pnpm 11 reads only auth and registry settings from .npmrc; every other setting
-# has to live here or in the global config.yaml. These seven moved out of the
-# repo's .npmrc, which is now gone -- it held nothing else. Silently losing them
-# is the failure mode: pnpm 11 does not warn about a pnpm setting left in
+# pnpm 11 and 12 read only auth and registry settings from .npmrc; every other
+# setting has to live here or in the global config.yaml. These seven moved out of
+# the repo's .npmrc, which is now gone -- it held nothing else. Silently losing
+# them is the failure mode: neither version warns about a pnpm setting left in
 # .npmrc, it just applies its own default, so `ignoreScripts` reverts to running
 # every dependency's install hooks and `autoInstallPeers` reverts to true.
+#
+# pnpm 12 ships as a native binary whose published `bin/pnpm` is a placeholder its
+# own preinstall script rewrites. pnpm's self-install of the `packageManager`
+# version inherits `ignoreScripts: true`, so that script never runs and the
+# placeholder stays. On 12.0.0-12.3.x that is fatal -- `bin/pnpm: 4: Syntax
+# error: ")" unexpected` on every call (pnpm/pnpm#14346) -- so never pin below
+# 12.4.0. From 12.4.0 (pnpm/pnpm#14527) the placeholder is a valid `sh` script
+# that hands over to `bin/pnpm.mjs`, which spawns the `@pnpm/exe.<platform>`
+# binary pnpm already installed and integrity-checked against this lockfile's
+# `packageManagerDependencies`. Nothing is downloaded on that path; the cost is
+# one Node startup per call. Allowing `pnpm` or `@pnpm/exe` in allowBuilds below
+# does not change it -- the placeholder stays either way, so neither is listed.
+# pnpm 12 also parses `--depth` as an integer, so `pnpm update --depth Infinity`
+# is rejected; plain `pnpm update -r <pkg>` already re-resolves a transitive leaf.
 frozenLockfile: true
 preferFrozenLockfile: true
 ignoreScripts: true
@@ -48,24 +66,23 @@ overrides:
   # nothing. So each entry here has to be re-tested, not just re-read: drop it,
   # re-resolve, and see whether the advisory actually comes back.
   #
-  # That test is what removed the other four. "@babel/helper-compilation-targets"
-  # and "core-js-compat" (browserslist), "ajv>fast-uri" and "express>qs" all named
-  # leaves whose parents declare open carets -- ^4.24.0 / ^4.28.1, ^3.0.1, ^6.14.0
-  # -- so with the fixes now published the resolver reaches them unaided. Dropping
-  # all four and re-resolving lands browserslist 4.28.8, fast-uri 3.1.6 and qs
-  # 6.16.0, all patched, and brings back only the esbuild advisory below.
+  # That test is what removed the other four, and again the two this cycle.
+  # "@babel/helper-compilation-targets" and "core-js-compat" (browserslist),
+  # "ajv>fast-uri" and "express>qs" all named leaves under open carets, so the
+  # resolver reaches the published fixes unaided; so do ajv's fast-uri ^3.0.1 and
+  # express-rate-limit's ip-address ^10.2.0. One override is left.
 
   # @esbuild-kit/core-utils (deprecated, via drizzle-kit > @esbuild-kit/esm-loader)
   # hard-pins esbuild ~0.18.20, which carries the dev-server SSRF. drizzle-kit
   # itself already declares ^0.25.4, so only this leaf needs lifting. This is the
   # hard-pin case, so no upstream patch release can ever retire it on its own.
-  # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.10 still
-  # declares "@esbuild-kit/esm-loader": "^2.5.5", and so does 0.31.11, the newer
-  # `latest`; drizzle-kit 1.x is rc-only and the stack is locked to stable.
+  # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.10 and 0.31.11
+  # both still declare "@esbuild-kit/esm-loader": "^2.5.5", and drizzle-kit 1.x is
+  # rc-only while the stack is locked to stable.
   # Re-tested this cycle by dropping the entry and re-resolving: esbuild 0.18.20
-  # reappears on five paths and GHSA-67mh-4wv8-2f99 comes back moderate. Note the
-  # extra paths -- better-auth pulls drizzle-kit too, so this is no longer a
-  # dev-only chain reachable from the root alone.
+  # reappears on five paths -- the root drizzle-kit, better-auth's, and the auth
+  # CLI's, so this is no longer a dev-only chain reachable from the root alone --
+  # and GHSA-67mh-4wv8-2f99 comes back moderate.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
 
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
@@ -79,7 +96,7 @@ overrides:
 # with how the same object already types its other optional fields.
 # better-call 1.4.0 is `latest` and @better-auth/oauth-provider peer-pins it
 # exactly ("better-call": "1.4.0") -- in 1.7.2, and unchanged through 1.7.3,
-# 1.7.4 and 1.7.5 -- so there is no version to upgrade to, and no better-auth
+# 1.7.4, 1.7.5 and 1.7.6 -- so there is no version to upgrade to, and no better-auth
 # bump inside or outside the cooldown window would retire this patch. The
 # registry does carry a 2.0.6 under a `release-2.0` dist-tag, but it is not
 # `latest` and the exact peer pin makes it unreachable -- it is not an upgrade
