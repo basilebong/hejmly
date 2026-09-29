@@ -35,7 +35,7 @@ that requires a separate commercial license (contact us).
   provider (`@better-auth/oauth-provider` + JWT) for MCP clients like Claude
 - **Validation:** Valibot at HTTP boundaries, Zod inside MCP tool defs only
 - **Tests:** `bun:test`; Playwright for end-to-end
-- **Package manager:** pnpm 11 (hardened defaults, see `pnpm-workspace.yaml`)
+- **Package manager:** pnpm 12 (hardened defaults, see `pnpm-workspace.yaml`)
 
 ## Layout
 
