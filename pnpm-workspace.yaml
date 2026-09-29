@@ -1,3 +1,7 @@
+# Keep every run of consecutive comment lines inside a mapping at 32 or fewer:
+# pnpm 12's YAML parser fails the whole load at 33 ("too many consecutive comments
+# before resolving collection entry"), while pnpm 11 parses any length -- so an
+# over-long block breaks nothing today and everything the day someone runs pnpm 12.
 packages:
   - "apps/*"
   - "packages/*"
@@ -9,16 +13,19 @@ packages:
 # .npmrc, it just applies its own default, so `ignoreScripts` reverts to running
 # every dependency's install hooks and `autoInstallPeers` reverts to true.
 #
-# `ignoreScripts: true` is also what keeps `packageManager` on the pnpm 11 line.
-# pnpm 12 ships as a native binary whose published `bin/pnpm` is a placeholder
-# that its own preinstall script rewrites; its install.js says so outright --
-# "the tradeoff is no fallback when build scripts are blocked (--ignore-scripts,
-# pnpm/Bun default)". pnpm's self-managed install of the version named here
-# inherits this setting, so pinning pnpm@12 leaves the placeholder in
-# ~/.local/share/pnpm/.tools and every later `pnpm` call dies with
-# `bin/pnpm: 4: Syntax error: ")" unexpected`. Verified on 12.1.0, and adding
-# `pnpm: true` to allowBuilds below does not lift it. pnpm 12 needs either this
-# setting relaxed or pnpm installed out of band; neither is worth a minor.
+# `ignoreScripts: true` is why `packageManager` is still on the pnpm 11 line, but
+# only until 2026-10-08. pnpm 12 ships as a native binary whose published
+# `bin/pnpm` is a placeholder its own preinstall script rewrites, and pnpm's
+# self-managed install of the pinned version inherits this setting -- so on
+# 12.0.0 through 12.3.4 the placeholder survives and every later `pnpm` call dies
+# with `bin/pnpm: 4: Syntax error: ")" unexpected` (pnpm/pnpm#14346). Upstream
+# pnpm/pnpm#14527 makes the placeholder a valid `sh` script that re-execs
+# `bin/pnpm.mjs` under Node when scripts are blocked; it shipped in 12.4.0.
+# Verified here: 12.3.2 still dies, 12.4.0 loads, and 12.4.2 installs this
+# workspace end-to-end under `ignoreScripts: true` with no lockfile churn.
+# 12.4.0 is 20.6d old, so the 30-day window -- not the setting -- is what holds
+# it back now. When it ages out, also add `'@pnpm/exe': true` to allowBuilds
+# (pnpm/pnpm#14926) so the native binary is used instead of the Node fallback.
 frozenLockfile: true
 preferFrozenLockfile: true
 ignoreScripts: true
@@ -59,29 +66,23 @@ overrides:
   # nothing. So each entry here has to be re-tested, not just re-read: drop it,
   # re-resolve, and see whether the advisory actually comes back.
   #
-  # That test is what removed the other four. "@babel/helper-compilation-targets"
-  # and "core-js-compat" (browserslist), "ajv>fast-uri" and "express>qs" all named
-  # leaves whose parents declare open carets -- ^4.24.0 / ^4.28.1, ^3.0.1, ^6.14.0
-  # -- so with the fixes now published the resolver reaches them unaided. Dropping
-  # all four and re-resolving lands browserslist 4.28.8, fast-uri 3.1.6 and qs
-  # 6.16.0, all patched, and brings back only the esbuild advisory below.
+  # That test is what removed the other four, and again the two this cycle.
+  # "@babel/helper-compilation-targets" and "core-js-compat" (browserslist),
+  # "ajv>fast-uri" and "express>qs" all named leaves under open carets, so the
+  # resolver reaches the published fixes unaided; so do ajv's fast-uri ^3.0.1 and
+  # express-rate-limit's ip-address ^10.2.0. One override is left.
 
   # @esbuild-kit/core-utils (deprecated, via drizzle-kit > @esbuild-kit/esm-loader)
   # hard-pins esbuild ~0.18.20, which carries the dev-server SSRF. drizzle-kit
   # itself already declares ^0.25.4, so only this leaf needs lifting. This is the
   # hard-pin case, so no upstream patch release can ever retire it on its own.
-  # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.10 still
-  # declares "@esbuild-kit/esm-loader": "^2.5.5", and so does 0.31.11, the newer
-  # `latest`; drizzle-kit 1.x is rc-only and the stack is locked to stable.
+  # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.10 and 0.31.11
+  # both still declare "@esbuild-kit/esm-loader": "^2.5.5", and drizzle-kit 1.x is
+  # rc-only while the stack is locked to stable.
   # Re-tested this cycle by dropping the entry and re-resolving: esbuild 0.18.20
-  # reappears on five paths and GHSA-67mh-4wv8-2f99 comes back moderate. Note the
-  # extra paths -- better-auth pulls drizzle-kit too, so this is no longer a
-  # dev-only chain reachable from the root alone.
-  #
-  # It is also the only override left. The fast-uri and ip-address advisories
-  # this cycle cleared did NOT need one: ajv declares fast-uri ^3.0.1 and
-  # express-rate-limit declares ip-address ^10.2.0, so re-resolving those two
-  # leaves reached 3.1.8 and 10.7.2 unaided.
+  # reappears on five paths -- the root drizzle-kit, better-auth's, and the auth
+  # CLI's, so this is no longer a dev-only chain reachable from the root alone --
+  # and GHSA-67mh-4wv8-2f99 comes back moderate.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
 
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
