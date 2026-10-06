@@ -77,8 +77,8 @@ overrides:
   # itself already declares ^0.25.4, so only this leaf needs lifting. This is the
   # hard-pin case, so no upstream patch release can ever retire it on its own.
   # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.10 and 0.31.11
-  # both still declare "@esbuild-kit/esm-loader": "^2.5.5", and drizzle-kit 1.x is
-  # rc-only while the stack is locked to stable.
+  # (still `latest`) both declare "@esbuild-kit/esm-loader": "^2.5.5", and
+  # drizzle-kit 1.x is rc-only while the stack is locked to stable.
   # Re-tested this cycle by dropping the entry and re-resolving: esbuild 0.18.20
   # reappears on five paths -- the root drizzle-kit, better-auth's, and the auth
   # CLI's, so this is no longer a dev-only chain reachable from the root alone --
@@ -94,10 +94,11 @@ overrides:
 # BetterAuthPlugin and `createAuth` fails to compile. The patch adds the missing
 # `| undefined` to those three properties -- strictly widening, and consistent
 # with how the same object already types its other optional fields.
-# better-call 1.4.0 is `latest` and @better-auth/oauth-provider peer-pins it
-# exactly ("better-call": "1.4.0") -- in 1.7.2, and unchanged through 1.7.3,
-# 1.7.4, 1.7.5 and 1.7.6 -- so there is no version to upgrade to, and no better-auth
-# bump inside or outside the cooldown window would retire this patch. The
+# @better-auth/oauth-provider peer-pins better-call exactly ("better-call":
+# "1.4.0") -- in 1.7.2, and unchanged through 1.7.7 -- so no better-auth bump
+# inside or outside the cooldown window would retire this patch. better-call
+# 1.4.1 is now `latest`, but it ships the same three unwidened properties in
+# both openapi.d.mts and .d.cts, and the exact peer pin rejects it anyway. The
 # registry does carry a 2.0.6 under a `release-2.0` dist-tag, but it is not
 # `latest` and the exact peer pin makes it unreachable -- it is not an upgrade
 # path, do not reach for it. Drop this the moment upstream ships the fix; a
