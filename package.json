@@ -20,9 +20,9 @@
     "db:migrate": "bun --bun ./scripts/migrate.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.11",
+    "@biomejs/biome": "2.5.12",
     "@types/react": "19.2.18",
-    "bun-types": "1.4.0",
+    "bun-types": "1.4.2",
     "concurrently": "10.0.5",
     "drizzle-kit": "0.31.10",
     "drizzle-orm": "0.45.2",
