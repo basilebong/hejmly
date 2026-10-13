@@ -197,3 +197,17 @@ describe("migration 0008 against a database that ran Better Auth 1.7.0-1.7.2", (
     expect(schemaOf(upgradedFromIssuerSchema())).toBe(schemaOf(migratedThrough("0008")));
   });
 });
+
+describe("the fully migrated schema", () => {
+  test("keeps UNIQUE(provider_id, account_id) on accounts", () => {
+    const db = new Database(":memory:");
+    for (const f of sqlFiles()) applyMigration(db, f);
+    expect(
+      rows(db, "SELECT sql FROM sqlite_master WHERE name = 'accounts_provider_account_unique'"),
+    ).toEqual([
+      {
+        sql: "CREATE UNIQUE INDEX `accounts_provider_account_unique` ON `accounts` (`provider_id`,`account_id`)",
+      },
+    ]);
+  });
+});

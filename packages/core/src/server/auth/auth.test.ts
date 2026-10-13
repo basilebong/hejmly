@@ -84,4 +84,15 @@ describe("auth (integration)", () => {
       ).rejects.toThrow();
     });
   });
+
+  test("declares UNIQUE(providerId, accountId) on account, so auth:generate emits the index", async () => {
+    await withTestAuth({}, async ({ auth }) => {
+      const { account } = (await auth.$context).tables;
+      expect(account?.indexes).toContainEqual({
+        fields: ["providerId", "accountId"],
+        unique: true,
+        name: "accounts_provider_account_unique",
+      });
+    });
+  });
 });
