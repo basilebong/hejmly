@@ -80,9 +80,8 @@ overrides:
   # (still `latest`) both declare "@esbuild-kit/esm-loader": "^2.5.5", and
   # drizzle-kit 1.x is rc-only while the stack is locked to stable.
   # Re-tested this cycle by dropping the entry and re-resolving: esbuild 0.18.20
-  # reappears on five paths -- the root drizzle-kit, better-auth's, and the auth
-  # CLI's, so this is no longer a dev-only chain reachable from the root alone --
-  # and GHSA-67mh-4wv8-2f99 comes back moderate.
+  # comes back (drizzle-kit is reached from the root, better-auth and the auth
+  # CLI, so this is not a dev-only chain) and GHSA-67mh-4wv8-2f99 returns moderate.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
 
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
@@ -94,17 +93,17 @@ overrides:
 # BetterAuthPlugin and `createAuth` fails to compile. The patch adds the missing
 # `| undefined` to those three properties -- strictly widening, and consistent
 # with how the same object already types its other optional fields.
-# @better-auth/oauth-provider peer-pins better-call exactly ("better-call":
-# "1.4.0") -- in 1.7.2, and unchanged through 1.7.7 -- so no better-auth bump
-# inside or outside the cooldown window would retire this patch. better-call
-# 1.4.1 is now `latest`, but it ships the same three unwidened properties in
-# both openapi.d.mts and .d.cts, and the exact peer pin rejects it anyway. The
-# registry does carry a 2.0.6 under a `release-2.0` dist-tag, but it is not
-# `latest` and the exact peer pin makes it unreachable -- it is not an upgrade
-# path, do not reach for it. Drop this the moment upstream ships the fix; a
+# The fix is upstream: better-call 1.4.2 (`latest` since 2026-10-08) declares all
+# three as `| undefined` in both openapi.d.mts and .d.cts. It is still not
+# reachable. better-auth depends on, and @better-auth/oauth-provider peer-pins,
+# better-call at exactly "1.4.0" -- in 1.7.4, and unchanged through 1.7.7 -- so
+# no better-auth bump inside or outside the cooldown window retires this patch,
+# and forcing 1.4.2 would trade the patch for an override that breaks an exact
+# peer pin. The `release-2.0` dist-tag's 2.0.6 is not an upgrade path either.
+# Drop this patch in the PR whose better-auth bump moves that pin to >=1.4.2; a
 # better-call bump makes the patch fail loudly rather than silently rot.
 # Re-verified this cycle by removing the patch and running `tsc -b --force`:
-# still fails with `schema.items` -- `Type 'undefined' is not assignable`.
+# still fails on oauth2Authorize -- `not assignable to type 'BetterAuthPlugin'`.
 # Note the --force: a plain `tsc -b` reuses .tsbuildinfo and passes anyway.
 patchedDependencies:
   better-call@1.4.0: patches/better-call@1.4.0.patch
