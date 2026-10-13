@@ -16,8 +16,28 @@ export type CreateAuthOptions = {
   mcpResource: string;
 };
 
+// Better Auth looks accounts up by (providerId, accountId) but declares no unique
+// index for it, so two racing OAuth callbacks could insert the same account twice.
+// Declaring it here, not in schema.ts, keeps it alive across `auth:generate`.
+const accountUniqueness = {
+  id: "hejmly-account-uniqueness",
+  schema: {
+    account: {
+      fields: {},
+      indexes: [
+        {
+          fields: ["providerId", "accountId"],
+          unique: true,
+          name: "accounts_provider_account_unique",
+        },
+      ],
+    },
+  },
+} satisfies BetterAuthPlugin;
+
 export const createAuth = (opts: CreateAuthOptions) => {
   const plugins: BetterAuthPlugin[] = [
+    accountUniqueness,
     jwt(),
     oauthProvider({
       loginPage: "/sign-in",
