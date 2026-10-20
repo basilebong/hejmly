@@ -42,11 +42,6 @@ const errorText = (error: RecipeError): string =>
     .with({ kind: "invalid_input" }, (e) => e.message)
     .exhaustive();
 
-const errorResult = (error: RecipeError) => ({
-  content: [{ type: "text" as const, text: errorText(error) }],
-  isError: true,
-});
-
 const ingredientShape = z.object({
   name: z.string().trim().min(1).max(120),
   quantity: z.string().trim().max(40),
@@ -78,6 +73,23 @@ const stepShape = z.object({
 
 export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): void => {
   const { service, actor, audit } = deps;
+
+  const failure = async (action: string, error: RecipeError, metadata: Record<string, unknown>) => {
+    await safely(
+      "audit",
+      audit.record({
+        userId: actor,
+        action,
+        via: "mcp",
+        metadata: { ...metadata, error: error.kind },
+      }),
+    );
+    return {
+      content: [{ type: "text" as const, text: errorText(error) }],
+      structuredContent: { error },
+      isError: true,
+    };
+  };
 
   server.registerTool(
     "recipes__list",
@@ -112,7 +124,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     },
     async ({ recipeId }) => {
       const result = await service.get(parseRecipeId(recipeId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("recipes__get", result.error, { recipeId });
       await safely(
         "audit",
         audit.record({
@@ -165,7 +177,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
         })),
       };
       const result = await service.create(input, actor);
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("recipes__add", result.error, { title });
       await safely(
         "audit",
         audit.record({
@@ -202,7 +214,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     async ({ recipeId, title, description, category, minutes, serves, ingredients, steps }) => {
       const id = parseRecipeId(recipeId);
       const existing = await service.get(id);
-      if (existing.kind === "err") return errorResult(existing.error);
+      if (existing.kind === "err") return failure("recipes__update", existing.error, { recipeId });
       const input: CreateRecipeInput = {
         title,
         description: description ?? "",
@@ -224,7 +236,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
         })),
       };
       const result = await service.update(id, input);
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("recipes__update", result.error, { recipeId });
       await safely(
         "audit",
         audit.record({
@@ -250,7 +262,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     },
     async ({ recipeId }) => {
       const result = await service.remove(parseRecipeId(recipeId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("recipes__remove", result.error, { recipeId });
       await safely(
         "audit",
         audit.record({

@@ -13,6 +13,18 @@ import { registerRecipeTools } from "./index.ts";
 
 const TEST_EMAIL = "basile@example.com";
 
+const AuditRowSchema = v.object({ action: v.string(), metadata_json: v.nullable(v.string()) });
+
+const auditEntries = (db: Db): { action: string; metadata: unknown }[] =>
+  db.$client
+    .query("SELECT action, metadata_json FROM audit_log ORDER BY created_at")
+    .all()
+    .map((raw) => {
+      const row = v.parse(AuditRowSchema, raw);
+      const metadata: unknown = row.metadata_json === null ? null : JSON.parse(row.metadata_json);
+      return { action: row.action, metadata };
+    });
+
 const seedUser = async (auth: Auth): Promise<UserId> => {
   const ctx = await auth.$context;
   const user = await ctx.internalAdapter.createUser(
@@ -190,6 +202,12 @@ describe("recipe MCP tools", () => {
         arguments: { ...ADD_ARGS, recipeId: "does-not-exist" },
       });
       expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error: { kind: "not_found", id: "does-not-exist" },
+      });
+      expect(auditEntries(db)).toEqual([
+        { action: "recipes__update", metadata: { recipeId: "does-not-exist", error: "not_found" } },
+      ]);
     });
   });
 
@@ -212,6 +230,12 @@ describe("recipe MCP tools", () => {
         arguments: { recipeId: "does-not-exist" },
       });
       expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error: { kind: "not_found", id: "does-not-exist" },
+      });
+      expect(auditEntries(db)).toEqual([
+        { action: "recipes__get", metadata: { recipeId: "does-not-exist", error: "not_found" } },
+      ]);
     });
   });
 });

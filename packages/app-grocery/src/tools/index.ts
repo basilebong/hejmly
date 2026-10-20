@@ -34,11 +34,6 @@ const errorText = (error: GroceryError): string =>
     .with({ kind: "already_in_state" }, (e) => `Item is already ${e.state}.`)
     .exhaustive();
 
-const errorResult = (error: GroceryError) => ({
-  content: [{ type: "text" as const, text: errorText(error) }],
-  isError: true,
-});
-
 const itemResult = (text: string, item: GroceryItem) => ({
   content: [{ type: "text" as const, text }],
   structuredContent: { item },
@@ -46,6 +41,27 @@ const itemResult = (text: string, item: GroceryItem) => ({
 
 export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): void => {
   const { service, actor, audit, cleanup } = deps;
+
+  const failure = async (
+    action: string,
+    error: GroceryError,
+    metadata: Record<string, unknown>,
+  ) => {
+    await safely(
+      "audit",
+      audit.record({
+        userId: actor,
+        action,
+        via: "mcp",
+        metadata: { ...metadata, error: error.kind },
+      }),
+    );
+    return {
+      content: [{ type: "text" as const, text: errorText(error) }],
+      structuredContent: { error },
+      isError: true,
+    };
+  };
 
   server.registerTool(
     "grocery__list_items",
@@ -87,7 +103,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     },
     async ({ name, description }) => {
       const result = await service.create({ name, description }, actor);
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("grocery__add_item", result.error, { name });
       await safely(
         "audit",
         audit.record({
@@ -110,7 +126,8 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     },
     async ({ itemId }) => {
       const result = await service.markPurchased(parseGroceryItemId(itemId), actor);
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err")
+        return failure("grocery__mark_purchased", result.error, { itemId });
       await safely(
         "audit",
         audit.record({
@@ -134,7 +151,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     },
     async ({ itemId }) => {
       const result = await service.markPending(parseGroceryItemId(itemId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("grocery__mark_pending", result.error, { itemId });
       await safely(
         "audit",
         audit.record({
@@ -162,7 +179,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     },
     async ({ itemId, name, description }) => {
       const result = await service.update(parseGroceryItemId(itemId), { name, description });
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("grocery__update_item", result.error, { itemId });
       await safely(
         "audit",
         audit.record({
@@ -185,7 +202,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     },
     async ({ itemId }) => {
       const result = await service.remove(parseGroceryItemId(itemId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("grocery__remove_item", result.error, { itemId });
       await safely(
         "audit",
         audit.record({
