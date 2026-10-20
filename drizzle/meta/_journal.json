@@ -64,6 +64,13 @@
       "when": 1791854351323,
       "tag": "0008_confused_havok",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792478693038,
+      "tag": "0009_nostalgic_sphinx",
+      "breakpoints": true
     }
   ]
 }

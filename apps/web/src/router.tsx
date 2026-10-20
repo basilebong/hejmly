@@ -15,6 +15,8 @@ import { CreateRecipeScreen } from "@/features/recipes/CreateRecipeScreen";
 import { EditRecipeScreen } from "@/features/recipes/EditRecipeScreen";
 import { RecipeDetailScreen } from "@/features/recipes/RecipeDetailScreen";
 import { RecipesScreen } from "@/features/recipes/RecipesScreen";
+import { ProjectScreen } from "@/features/todo/ProjectScreen";
+import { ProjectsScreen } from "@/features/todo/ProjectsScreen";
 
 export const rootRoute = createRootRoute({
   component: AppShell,
@@ -116,6 +118,29 @@ export const editRecipeRoute = createRoute({
   },
 });
 
+export const todoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/todo",
+  component: () => (
+    <AuthGuard>
+      <ProjectsScreen />
+    </AuthGuard>
+  ),
+});
+
+export const todoProjectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/todo/$projectId",
+  component: () => {
+    const { projectId } = todoProjectRoute.useParams();
+    return (
+      <AuthGuard>
+        <ProjectScreen projectId={projectId} />
+      </AuthGuard>
+    );
+  },
+});
+
 export const appsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps",
@@ -160,6 +185,8 @@ const routeTree = rootRoute.addChildren([
   newRecipeRoute,
   recipeDetailRoute,
   editRecipeRoute,
+  todoRoute,
+  todoProjectRoute,
   appsRoute,
   meRoute,
   consentRoute,

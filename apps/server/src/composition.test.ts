@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { CleanupScheduler } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
+import { createTodoService } from "@hejmly/app-todo/server";
 import type { Auth, Db } from "@hejmly/core/server";
 import { createAssistantsService, createAuditRecorder } from "@hejmly/core/server";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
@@ -44,6 +45,7 @@ const appFor = (auth: Auth, db: Db, baseURL = "http://localhost:5173") =>
     assistants: { service: createAssistantsService(db) },
     grocery: groceryFor(db),
     recipes: { service: createRecipeService(db) },
+    todo: { service: createTodoService(db) },
     staticRoot: distRoot,
   });
 
@@ -133,6 +135,30 @@ describe("composition", () => {
 
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ assistants: [] });
+      },
+    );
+  });
+
+  test("/api/todo is gated by the session and mounted for signed-in users", async () => {
+    await withTestAuth(
+      { allowedEmails: "basile@example.com" },
+      async ({ auth, db, signSessionCookie }) => {
+        const app = appFor(auth, db);
+        const anonymous = await app.request("/api/todo/projects");
+        expect(anonymous.status).toBe(401);
+
+        const ctx = await auth.$context;
+        const user = await ctx.internalAdapter.createUser(
+          { name: "Basile", email: "basile@example.com" },
+          googleProvisioningSource,
+        );
+        const sessionRow = await ctx.internalAdapter.createSession(user.id);
+        const signed = await signSessionCookie(sessionRow.token);
+        const res = await app.request("/api/todo/projects", {
+          headers: { cookie: `Hejmly.session_token=${signed}` },
+        });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ projects: [] });
       },
     );
   });

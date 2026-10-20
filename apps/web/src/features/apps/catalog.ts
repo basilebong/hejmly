@@ -7,7 +7,7 @@ import {
   UserIcon,
 } from "@phosphor-icons/react";
 
-export type AppRoute = "/grocery" | "/recipes" | "/me";
+export type AppRoute = "/grocery" | "/recipes" | "/todo" | "/me";
 
 export type AppStatus = { kind: "live"; to: AppRoute } | { kind: "soon" };
 
@@ -37,9 +37,9 @@ export const APP_CATALOG: readonly AppEntry[] = [
   {
     id: "todo",
     name: "Todo",
-    note: "Soon",
+    note: "Projects",
     icon: CheckSquareIcon,
-    status: { kind: "soon" },
+    status: { kind: "live", to: "/todo" },
   },
   {
     id: "me",

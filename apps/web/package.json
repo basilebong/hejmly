@@ -16,6 +16,7 @@
     "@better-auth/oauth-provider": "1.7.4",
     "@hejmly/app-grocery": "workspace:*",
     "@hejmly/app-recipes": "workspace:*",
+    "@hejmly/app-todo": "workspace:*",
     "@hejmly/core": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/query-async-storage-persister": "5.102.8",

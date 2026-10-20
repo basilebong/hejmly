@@ -1,6 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { createCleanupScheduler, createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
+import { createTodoService } from "@hejmly/app-todo/server";
 import {
   createAssistantsService,
   createAuditRecorder,
@@ -37,6 +38,7 @@ const auth = createAuth({
 
 const groceryService = createGroceryService(db);
 const recipeService = createRecipeService(db);
+const todoService = createTodoService(db);
 const assistantsService = createAssistantsService(db);
 const audit = createAuditRecorder(db);
 const cleanup = createCleanupScheduler({
@@ -55,6 +57,7 @@ const app = createApp({
   assistants: { service: assistantsService },
   grocery: { service: groceryService, cleanup },
   recipes: { service: recipeService },
+  todo: { service: todoService },
 });
 
 const server = Bun.serve({ port: env.PORT, fetch: app.fetch });

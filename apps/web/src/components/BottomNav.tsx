@@ -1,17 +1,29 @@
 import { TimerBar } from "@hejmly/app-recipes/ui";
-import { BasketIcon, CookingPotIcon, type Icon, SquaresFourIcon } from "@phosphor-icons/react";
+import {
+  BasketIcon,
+  CheckSquareIcon,
+  CookingPotIcon,
+  type Icon,
+  SquaresFourIcon,
+} from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
 import type { ReactElement } from "react";
 
 import { cn } from "@/lib/cn";
 
-export type NavTab = "grocery" | "recipes" | "apps";
+export type NavTab = "grocery" | "recipes" | "todo" | "apps";
 
-type NavEntry = { id: NavTab; to: "/grocery" | "/recipes" | "/apps"; icon: Icon; label: string };
+type NavEntry = {
+  id: NavTab;
+  to: "/grocery" | "/recipes" | "/todo" | "/apps";
+  icon: Icon;
+  label: string;
+};
 
 const ENTRIES: readonly NavEntry[] = [
   { id: "grocery", to: "/grocery", icon: BasketIcon, label: "Grocery" },
   { id: "recipes", to: "/recipes", icon: CookingPotIcon, label: "Recipes" },
+  { id: "todo", to: "/todo", icon: CheckSquareIcon, label: "Todo" },
   { id: "apps", to: "/apps", icon: SquaresFourIcon, label: "Apps" },
 ];
 

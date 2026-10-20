@@ -13,6 +13,7 @@
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/app-grocery" },
-    { "path": "../../packages/app-recipes" }
+    { "path": "../../packages/app-recipes" },
+    { "path": "../../packages/app-todo" }
   ]
 }
