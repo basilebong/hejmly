@@ -212,8 +212,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
       hono:
-        specifier: 4.13.8
-        version: 4.13.8
+        specifier: 4.13.11
+        version: 4.13.11
 
   apps/web:
     dependencies:
@@ -324,8 +324,8 @@ importers:
         specifier: 2.1.1
         version: 2.1.1
       hono:
-        specifier: 4.13.8
-        version: 4.13.8
+        specifier: 4.13.11
+        version: 4.13.11
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
@@ -364,8 +364,8 @@ importers:
         specifier: 2.1.1
         version: 2.1.1
       hono:
-        specifier: 4.13.8
-        version: 4.13.8
+        specifier: 4.13.11
+        version: 4.13.11
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
@@ -410,8 +410,8 @@ importers:
         specifier: 2.1.1
         version: 2.1.1
       hono:
-        specifier: 4.13.8
-        version: 4.13.8
+        specifier: 4.13.11
+        version: 4.13.11
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
@@ -453,8 +453,8 @@ importers:
         specifier: 0.45.2
         version: 0.45.2(bun-types@1.4.2)(kysely@0.28.17)
       hono:
-        specifier: 4.13.8
-        version: 4.13.8
+        specifier: 4.13.11
+        version: 4.13.11
       valibot:
         specifier: 1.5.0
         version: 1.5.0(typescript@7.0.2)
@@ -3471,8 +3471,8 @@ packages:
     resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
     engines: {node: '>= 0.4'}
 
-  hono@4.13.8:
-    resolution: {integrity: sha512-/Gng7NfoykZl2pjukW5Z6+8Yxm3BPRf86GTbQnt0SbySkvax4fyL4H3HhY1cCpBGmiW9XDRFzRV+CXK2W8QudQ==}
+  hono@4.13.11:
+    resolution: {integrity: sha512-/SMX/RQNJn7oNmFwH6DtwDqcrzZU2otm1FD6OJe2cWF6cfy/F8hq0XVBv7xW3FTJshRQwuBnXHDq2kNsdZnshg==}
     engines: {node: '>=16.9.0'}
 
   http-errors@2.0.1:
@@ -5625,9 +5625,9 @@ snapshots:
 
   '@floating-ui/utils@0.2.11': {}
 
-  '@hono/node-server@2.0.12(hono@4.13.8)':
+  '@hono/node-server@2.0.12(hono@4.13.11)':
     dependencies:
-      hono: 4.13.8
+      hono: 4.13.11
 
   '@isaacs/cliui@9.0.0': {}
 
@@ -5657,7 +5657,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.31.0(supports-color@10.2.2)(zod@4.6.5)':
     dependencies:
-      '@hono/node-server': 2.0.12(hono@4.13.8)
+      '@hono/node-server': 2.0.12(hono@4.13.11)
       ajv: 8.20.0
       ajv-formats: 3.0.1
       content-type: 1.0.5
@@ -5667,7 +5667,7 @@ snapshots:
       eventsource-parser: 3.0.8
       express: 5.2.1(supports-color@10.2.2)
       express-rate-limit: 8.5.2(express@5.2.1(supports-color@10.2.2))
-      hono: 4.13.8
+      hono: 4.13.11
       jose: 6.2.3
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -7485,7 +7485,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.13.8: {}
+  hono@4.13.11: {}
 
   http-errors@2.0.1:
     dependencies:

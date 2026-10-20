@@ -18,7 +18,7 @@
     "@modelcontextprotocol/sdk": "1.31.0",
     "@hejmly/core": "workspace:*",
     "clsx": "2.1.1",
-    "hono": "4.13.8",
+    "hono": "4.13.11",
     "tailwind-merge": "3.7.0",
     "ts-pattern": "5.9.0",
     "ulid": "3.0.2",

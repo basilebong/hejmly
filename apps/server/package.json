@@ -15,7 +15,7 @@
     "@hejmly/app-grocery": "workspace:*",
     "@hejmly/app-recipes": "workspace:*",
     "@hejmly/app-todo": "workspace:*",
-    "hono": "4.13.8"
+    "hono": "4.13.11"
   },
   "devDependencies": {}
 }
