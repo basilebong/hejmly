@@ -66,7 +66,7 @@ overrides:
   # nothing. So each entry here has to be re-tested, not just re-read: drop it,
   # re-resolve, and see whether the advisory actually comes back.
   #
-  # That test is what removed the other four, and again the two this cycle.
+  # That test is what retired six earlier entries.
   # "@babel/helper-compilation-targets" and "core-js-compat" (browserslist),
   # "ajv>fast-uri" and "express>qs" all named leaves under open carets, so the
   # resolver reaches the published fixes unaided; so do ajv's fast-uri ^3.0.1 and
@@ -96,12 +96,12 @@ overrides:
 # The fix is upstream: better-call 1.4.2 (`latest` since 2026-10-08) declares all
 # three as `| undefined` in both openapi.d.mts and .d.cts. It is still not
 # reachable. better-auth depends on, and @better-auth/oauth-provider peer-pins,
-# better-call at exactly "1.4.0" -- in 1.7.4, and unchanged through 1.7.7 -- so
-# no better-auth bump inside or outside the cooldown window retires this patch,
-# and forcing 1.4.2 would trade the patch for an override that breaks an exact
-# peer pin. The `release-2.0` dist-tag's 2.0.6 is not an upgrade path either.
-# Drop this patch in the PR whose better-auth bump moves that pin to >=1.4.2; a
-# better-call bump makes the patch fail loudly rather than silently rot.
+# better-call at exactly "1.4.0" -- in 1.7.5, and unchanged through 1.7.7. 1.7.8
+# (2026-10-14) is the first to move both pins to exactly "1.4.2", so the patch
+# retires with the first better-auth bump to >=1.7.8 once that clears the 30-day
+# window; forcing 1.4.2 sooner would trade the patch for an override that breaks
+# an exact peer pin. The `release-2.0` dist-tag's 2.0.6 is not an upgrade path.
+# A better-call bump makes the patch fail loudly rather than silently rot.
 # Re-verified this cycle by removing the patch and running `tsc -b --force`:
 # still fails on oauth2Authorize -- `not assignable to type 'BetterAuthPlugin'`.
 # Note the --force: a plain `tsc -b` reuses .tsbuildinfo and passes anyway.
