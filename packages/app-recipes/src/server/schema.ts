@@ -13,9 +13,9 @@ export const recipes = sqliteTable(
     serves: integer("serves").notNull(),
     ingredientsJson: text("ingredients_json").notNull(),
     stepsJson: text("steps_json").notNull(),
-    createdByUserId: text("created_by_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" })
       .$onUpdate(() => new Date())

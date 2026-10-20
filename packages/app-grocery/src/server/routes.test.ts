@@ -14,6 +14,7 @@ import { createGroceryRoutes } from "./routes.ts";
 import { createGroceryService } from "./service.ts";
 
 const TEST_EMAIL = "basile@example.com";
+const MEMBER_EMAIL = "anna@example.com";
 
 type CleanupCalls = {
   scheduled: GroceryItemId[];
@@ -43,35 +44,36 @@ type GroceryTestContext = {
   db: Db;
   auth: Auth;
   cleanup: CleanupCalls;
+  addMember: () => Promise<{ userId: string; cookie: string }>;
 };
 
 const seedSessionCookie = async (
   auth: Auth,
   signSessionCookie: (token: string) => Promise<string>,
+  who: { name: string; email: string } = { name: "Basile", email: TEST_EMAIL },
 ): Promise<{ userId: string; cookie: string }> => {
   const ctx = await auth.$context;
-  const user = await ctx.internalAdapter.createUser(
-    {
-      name: "Basile",
-      email: TEST_EMAIL,
-    },
-    googleProvisioningSource,
-  );
+  const user = await ctx.internalAdapter.createUser(who, googleProvisioningSource);
   const session = await ctx.internalAdapter.createSession(user.id);
   const signed = await signSessionCookie(session.token);
   return { userId: user.id, cookie: `Hejmly.session_token=${signed}` };
 };
 
 const withGrocery = async (fn: (ctx: GroceryTestContext) => Promise<void>): Promise<void> => {
-  await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db, signSessionCookie }) => {
-    const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
-    const service = createGroceryService(db);
-    const { scheduler, calls } = createStubCleanup();
-    const app: TestApp = new Hono<{ Variables: SessionVariables }>()
-      .use("/api/*", createRequireSession(auth))
-      .route("/api/grocery", createGroceryRoutes({ service, cleanup: scheduler }));
-    await fn({ app, cookie, userId, db, auth, cleanup: calls });
-  });
+  await withTestAuth(
+    { allowedEmails: `${TEST_EMAIL},${MEMBER_EMAIL}` },
+    async ({ auth, db, signSessionCookie }) => {
+      const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
+      const addMember = () =>
+        seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
+      const service = createGroceryService(db);
+      const { scheduler, calls } = createStubCleanup();
+      const app: TestApp = new Hono<{ Variables: SessionVariables }>()
+        .use("/api/*", createRequireSession(auth))
+        .route("/api/grocery", createGroceryRoutes({ service, cleanup: scheduler }));
+      await fn({ app, cookie, userId, db, auth, cleanup: calls, addMember });
+    },
+  );
 };
 
 const ItemResponseSchema = v.object({
@@ -88,11 +90,10 @@ const ItemResponseSchema = v.object({
   ]),
   createdAt: v.number(),
   updatedAt: v.number(),
-  addedBy: v.object({
-    id: v.string(),
-    name: v.string(),
-    initial: v.string(),
-  }),
+  addedBy: v.union([
+    v.object({ kind: v.literal("user"), id: v.string(), name: v.string(), initial: v.string() }),
+    v.object({ kind: v.literal("unknown"), name: v.string(), initial: v.string() }),
+  ]),
 });
 type ItemResponse = v.InferOutput<typeof ItemResponseSchema>;
 
@@ -128,6 +129,24 @@ const createItem = async (
 };
 
 describe("grocery routes", () => {
+  test("removing a member keeps the items they added, credited to someone unknown", async () => {
+    await withGrocery(async ({ app, cookie, userId, db, addMember }) => {
+      const anna = await addMember();
+      await createItem(app, cookie, { name: "Milk" });
+      await createItem(app, anna.cookie, { name: "Eggs" });
+
+      db.$client.run("DELETE FROM users WHERE id = ?", [userId]);
+
+      const res = await app.request("/api/grocery/items", { headers: { cookie: anna.cookie } });
+      expect(res.status).toBe(200);
+      const { items } = await parseBody(res, ItemListSchema);
+      expect(items.map((i) => [i.name, i.addedBy.kind]).sort()).toEqual([
+        ["Eggs", "user"],
+        ["Milk", "unknown"],
+      ]);
+    });
+  });
+
   describe("auth", () => {
     test("every route is 401 without a session", async () => {
       await withGrocery(async ({ app }) => {
@@ -189,7 +208,7 @@ describe("grocery routes", () => {
         expect(item.name).toBe("Milk");
         expect(item.description).toBeNull();
         expect(item.status).toEqual({ kind: "pending" });
-        expect(item.addedBy.id).toBe(userId);
+        expect(item.addedBy).toMatchObject({ kind: "user", id: userId });
       });
     });
 

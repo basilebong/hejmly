@@ -24,6 +24,14 @@ export type RecipeService = {
 
 const authorColumns = { id: users.id, name: users.name, email: users.email } as const;
 
+type AuthorRow = { id: string; name: string | null; email: string | null } | null;
+
+const fetchAuthor = async (db: Db, userId: string | null): Promise<AuthorRow> => {
+  if (userId === null) return null;
+  const rows = await db.select(authorColumns).from(users).where(eq(users.id, userId)).limit(1);
+  return rows[0] ?? null;
+};
+
 export const createRecipeService = (db: Db): RecipeService => ({
   async list() {
     const rows = await db
@@ -68,8 +76,7 @@ export const createRecipeService = (db: Db): RecipeService => ({
       .returning();
     const row = inserted[0];
     if (row === undefined) return err({ kind: "not_found", id });
-    const authorRows = await db.select(authorColumns).from(users).where(eq(users.id, by)).limit(1);
-    return ok(rowToRecipe(row, authorRows[0] ?? null));
+    return ok(rowToRecipe(row, await fetchAuthor(db, by)));
   },
 
   async update(id, input) {
@@ -89,12 +96,7 @@ export const createRecipeService = (db: Db): RecipeService => ({
       .returning();
     const row = updated[0];
     if (row === undefined) return err({ kind: "not_found", id });
-    const authorRows = await db
-      .select(authorColumns)
-      .from(users)
-      .where(eq(users.id, row.createdByUserId))
-      .limit(1);
-    return ok(rowToRecipe(row, authorRows[0] ?? null));
+    return ok(rowToRecipe(row, await fetchAuthor(db, row.createdByUserId)));
   },
 
   async remove(id) {

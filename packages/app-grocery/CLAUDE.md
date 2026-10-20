@@ -17,6 +17,9 @@ Owns the grocery list feature end-to-end. Exports FOUR subpaths:
   (optimistic updates). DO NOT FORK IT.
 - Service returns `Result<T, GroceryError>`; routes match with `.exhaustive()`.
 - Migrations: `bun run db:generate`, never hand-written SQL.
+- The author column (`added_by_user_id`) is nullable and `ON DELETE SET NULL`,
+  never cascade: the list is shared by the household, so removing one member
+  must not delete what they added. A missing author serializes as `{ kind: "unknown" }`.
 - Valibot schemas in `src/shared/validation.ts`. Used by routes AND TanStack
   Form (Standard Schema).
 - UI components in `src/ui/` must pass `.claude/rules/mobile.md` and use

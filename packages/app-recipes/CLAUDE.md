@@ -10,7 +10,7 @@ Owns the recipes feature end-to-end. Exports FOUR subpaths (mirrors
 - `./server` — Drizzle `recipes` schema (ingredients/steps stored as validated
   JSON, optional `image` data URL in its own column), a service returning
   `Result`, and Hono routes.
-- `./tools` — MCP `recipes.list` / `get` / `add` / `update` / `remove`.
+- `./tools` — MCP `recipes__list` / `__get` / `__add` / `__update` / `__remove`.
 - `./ui` — React components (recipe detail pieces, ingredient rows, the tappable
   `TimeChip` for the steps list + the big `CookTimeButton` for focused cook mode,
   the `useTimers` hook, the floating timer stack, the `PhotoInput` uploader
@@ -26,6 +26,10 @@ upload; it lives on the full `Recipe`, never on the list `RecipeSummary`.
   `cancelTimer`, and the `viewTimer` selector. The UI `useTimers` hook is the
   only place `Date.now()` is read; the reducer always takes `now` as a
   parameter so it stays testable. DO NOT FORK IT.
+- The author column (`created_by_user_id`) is nullable and `ON DELETE SET NULL`,
+  never cascade: the recipe book is shared by the household, so removing one
+  member must not delete their recipes. A missing author shows as cook
+  "Someone".
 - `RecipeCategory` is the closed set `Starter | Main | Dessert | Other`
   (`src/shared/category.ts`), validated with Valibot.
 - UI components in `src/ui/` must pass `.claude/rules/mobile.md` and reuse the
