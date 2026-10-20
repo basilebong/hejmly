@@ -58,11 +58,6 @@ jobs:
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, MPL-2.0, CC-BY-4.0, BlueOak-1.0.0
           # rou3 (Hono router): package.json declares "license": "MIT" and ships an MIT LICENSE file;
           #   GitHub's scanner spuriously reports "MIT AND MS-PL" — verified false-positive against upstream source.
-          # @better-fetch/fetch (better-auth HTTP client): kept for GitHub's license data, not for the package's
-          #   own metadata — as of 1.3.1 its package.json DOES declare "license": "MIT", so the missing-field
-          #   problem this entry was written for (at 1.1.21) is fixed upstream. Its version is unchanged by this
-          #   PR, so dependency-review does not re-evaluate it here and dropping the entry could not be verified.
-          #   Remove it from a PR that actually bumps the package, where CI can prove the entry is unnecessary.
           # json-schema-typed (TypeScript types for JSON Schema, pulled in transitively by
           #   @modelcontextprotocol/sdk via bunqueue): package.json declares "license": "BSD-2-Clause" and ships
           #   a pure BSD-2-Clause LICENSE.md; GitHub's scanner spuriously appends "AND JSON" — verified false-positive
@@ -71,4 +66,4 @@ jobs:
           #   (Mathias Bynens) but ship Unicode data tables, so GitHub's scanner reports
           #   "LicenseRef-scancode-unicode AND MIT". The Unicode license is permissive (BSD-style). Pulled by
           #   workbox-build's Babel (preset-env) toolchain at build time; verified MIT in node_modules.
-          allow-dependencies-licenses: 'pkg:npm/rou3, pkg:npm/%40better-fetch/fetch, pkg:npm/json-schema-typed, pkg:npm/unicode-property-aliases-ecmascript, pkg:npm/unicode-match-property-value-ecmascript'
+          allow-dependencies-licenses: 'pkg:npm/rou3, pkg:npm/json-schema-typed, pkg:npm/unicode-property-aliases-ecmascript, pkg:npm/unicode-match-property-value-ecmascript'
