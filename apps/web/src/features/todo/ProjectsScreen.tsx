@@ -1,8 +1,14 @@
 import {
   type CreateProjectInput,
+  isLocalId,
+  localIdSeed,
+  mergeServerRows,
   type Project,
   type ProjectId,
+  ProjectIdSchema,
   parseProjectId,
+  settleLocalRow,
+  syncStateOf,
 } from "@hejmly/app-todo/shared";
 import {
   AddProjectForm,
@@ -19,25 +25,33 @@ import { type ReactElement, useState } from "react";
 import { toast } from "sonner";
 
 import { BottomNav } from "@/components/BottomNav";
+import { useSessionAuthor } from "@/lib/session-author";
 import { createProject, fetchProjects } from "@/lib/todo-api";
 import { FormDrawer } from "./FormDrawer.tsx";
-import { isTempId, PROJECTS_QUERY_KEY, tempIdSeed } from "./keys.ts";
-import { useTodoIdentity } from "./useTodoIdentity.ts";
+import { CREATE_PROJECT_KEY, DELETE_PROJECT_KEY, PROJECTS_QUERY_KEY } from "./keys.ts";
+import { pendingIds, useLocalRowStates } from "./mutation-state.ts";
+
+type CreateVariables = { input: CreateProjectInput; tempId: ProjectId };
 
 export const ProjectsScreen = (): ReactElement => {
   const qc = useQueryClient();
-  const identity = useTodoIdentity();
+  const identity = useSessionAuthor();
   const [adding, setAdding] = useState(false);
+  const localStates = useLocalRowStates(CREATE_PROJECT_KEY);
 
   const projects = useQuery({
     queryKey: PROJECTS_QUERY_KEY,
-    queryFn: fetchProjects,
+    queryFn: async () =>
+      mergeServerRows(await fetchProjects(), qc.getQueryData<Project[]>(PROJECTS_QUERY_KEY), {
+        localAt: "start",
+        hidden: pendingIds(qc, DELETE_PROJECT_KEY, ProjectIdSchema),
+      }),
     refetchInterval: 30_000,
   });
 
   const create = useMutation({
-    mutationFn: ({ input, tempId }: { input: CreateProjectInput; tempId: ProjectId }) =>
-      createProject(input, tempId),
+    mutationKey: CREATE_PROJECT_KEY,
+    mutationFn: ({ input, tempId }: CreateVariables) => createProject(input, tempId),
     onMutate: async ({ input, tempId }) => {
       await qc.cancelQueries({ queryKey: PROJECTS_QUERY_KEY });
       const now = Date.now();
@@ -50,29 +64,41 @@ export const ProjectsScreen = (): ReactElement => {
         createdBy: identity,
         taskCounts: { open: 0, done: 0 },
       };
-      qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current) => [optimistic, ...(current ?? [])]);
-      return { tempId };
-    },
-    onError: (_e, _vars, ctx) => {
-      if (!navigator.onLine) return;
-      if (ctx !== undefined) {
-        qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current) =>
-          (current ?? []).filter((p) => p.id !== ctx.tempId),
-        );
-      }
-      toast.error("Could not create project");
-    },
-    onSuccess: (saved, _vars, ctx) => {
-      if (ctx === undefined) return;
-      qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current) =>
-        (current ?? []).map((p) => (p.id === ctx.tempId ? saved : p)),
+      qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) =>
+        current.some((p) => p.id === tempId)
+          ? current.map((p) => (p.id === tempId ? optimistic : p))
+          : [optimistic, ...current],
       );
     },
+    onError: () => {
+      if (!navigator.onLine) return;
+      toast.error("Could not create project — tap retry");
+    },
+    onSuccess: (saved, { tempId }) => {
+      qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) =>
+        settleLocalRow(current, tempId, saved, "start"),
+      );
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY }),
   });
 
   const handleCreate = (input: CreateProjectInput): void => {
-    create.mutate({ input, tempId: parseProjectId(tempIdSeed()) });
+    create.mutate({ input, tempId: parseProjectId(localIdSeed()) });
     setAdding(false);
+  };
+
+  const handleRetry = (project: Project): void => {
+    const input: CreateProjectInput =
+      project.description === null
+        ? { name: project.name }
+        : { name: project.name, description: project.description };
+    create.mutate({ input, tempId: project.id });
+  };
+
+  const handleDiscard = (id: ProjectId): void => {
+    qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) =>
+      current.filter((p) => p.id !== id),
+    );
   };
 
   if (projects.isPending) {
@@ -84,7 +110,7 @@ export const ProjectsScreen = (): ReactElement => {
     );
   }
 
-  if (projects.isError) {
+  if (projects.data === undefined) {
     return (
       <main className="flex h-dvh flex-col overflow-hidden bg-slate-50">
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
@@ -119,21 +145,31 @@ export const ProjectsScreen = (): ReactElement => {
           aria-label="Projects"
           className="flex-1 divide-y divide-slate-100 overflow-y-auto bg-white px-5 pb-24"
         >
-          {list.map((project) => (
-            <li key={project.id}>
-              {isTempId(project.id) ? (
-                <ProjectRow project={project} saving />
-              ) : (
-                <Link
-                  to="/todo/$projectId"
-                  params={{ projectId: project.id }}
-                  className="-mx-2 block rounded-xl px-2 transition active:bg-slate-50"
-                >
-                  <ProjectRow project={project} />
-                </Link>
-              )}
-            </li>
-          ))}
+          {list.map((project) => {
+            const row = (
+              <ProjectRow
+                project={project}
+                syncState={syncStateOf(project.id, localStates)}
+                onRetry={() => handleRetry(project)}
+                onDiscard={() => handleDiscard(project.id)}
+              />
+            );
+            return (
+              <li key={project.id}>
+                {isLocalId(project.id) ? (
+                  row
+                ) : (
+                  <Link
+                    to="/todo/$projectId"
+                    params={{ projectId: project.id }}
+                    className="-mx-2 block rounded-xl px-2 transition active:bg-slate-50"
+                  >
+                    {row}
+                  </Link>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       <Fab onClick={() => setAdding(true)} label="New project" />

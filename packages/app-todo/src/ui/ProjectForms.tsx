@@ -39,7 +39,6 @@ export const AddProjectForm = ({ onSubmit, onCancel }: AddProjectFormProps): Rea
     copy={ADD_COPY}
     initialPrimary=""
     initialSecondary=""
-    pending={false}
     selectOnFocus={false}
     validate={(name, description) => parseProjectDraft({ name, description })}
     onSubmit={onSubmit}
@@ -49,14 +48,12 @@ export const AddProjectForm = ({ onSubmit, onCancel }: AddProjectFormProps): Rea
 
 type EditProjectFormProps = {
   initial: { name: string; description: string | null };
-  pending: boolean;
   onSubmit: (input: UpdateProjectInput) => void;
   onCancel: () => void;
 };
 
 export const EditProjectForm = ({
   initial,
-  pending,
   onSubmit,
   onCancel,
 }: EditProjectFormProps): ReactElement => (
@@ -64,7 +61,6 @@ export const EditProjectForm = ({
     copy={EDIT_COPY}
     initialPrimary={initial.name}
     initialSecondary={initial.description ?? ""}
-    pending={pending}
     selectOnFocus
     validate={(name, description) => diffProjectDraft(initial, { name, description })}
     onSubmit={onSubmit}

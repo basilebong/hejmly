@@ -1,13 +1,19 @@
 import {
   type CreateTaskInput,
   countTasks,
+  isLocalId,
+  localIdSeed,
+  mergeServerRows,
   type Project,
   type ProjectId,
   ProjectIdSchema,
   type ProjectWithTasks,
   parseTaskId,
+  settleLocalRow,
+  syncStateOf,
   type Task,
   type TaskId,
+  TaskIdSchema,
   type TaskTransition,
   transition,
   type UpdateProjectInput,
@@ -23,7 +29,6 @@ import {
   ProjectHeader,
   TaskList,
   type TaskRowHandlers,
-  type TaskSyncState,
   TasksSkeleton,
 } from "@hejmly/app-todo/ui";
 import { ArrowLeftIcon, ListChecksIcon, WarningCircleIcon } from "@phosphor-icons/react";
@@ -35,6 +40,7 @@ import { match } from "ts-pattern";
 import * as v from "valibot";
 
 import { BottomNav } from "@/components/BottomNav";
+import { useSessionAuthor } from "@/lib/session-author";
 import {
   createTask,
   deleteProject,
@@ -47,8 +53,15 @@ import {
 } from "@/lib/todo-api";
 import { ConfirmDrawer } from "./ConfirmDrawer.tsx";
 import { FormDrawer } from "./FormDrawer.tsx";
-import { isTempId, PROJECTS_QUERY_KEY, projectQueryKey, tempIdSeed } from "./keys.ts";
-import { useTodoIdentity } from "./useTodoIdentity.ts";
+import {
+  createTaskKey,
+  DELETE_PROJECT_KEY,
+  deleteTaskKey,
+  PROJECTS_QUERY_KEY,
+  projectMutationsKey,
+  projectQueryKey,
+} from "./keys.ts";
+import { pendingIds, useLocalRowStates } from "./mutation-state.ts";
 
 type DrawerState =
   | { kind: "none" }
@@ -59,6 +72,14 @@ type DrawerState =
   | { kind: "remove_project" };
 
 const DRAWER_NONE: DrawerState = { kind: "none" };
+
+type CreateTaskVariables = { input: CreateTaskInput; tempId: TaskId };
+
+const isConflict = (error: unknown): boolean =>
+  error instanceof TodoApiError && error.status === 409;
+
+const isMissing = (error: unknown): boolean =>
+  error instanceof TodoApiError && error.status === 404;
 
 const BackLink = (): ReactElement => (
   <Link
@@ -128,27 +149,27 @@ export const ProjectScreen = ({ projectId }: { projectId: string }): ReactElemen
 const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const identity = useTodoIdentity();
+  const identity = useSessionAuthor();
   const key = projectQueryKey(id);
   const [drawer, setDrawer] = useState<DrawerState>(DRAWER_NONE);
-  const [sync, setSyncMap] = useState<ReadonlyMap<TaskId, TaskSyncState>>(() => new Map());
+  const localStates = useLocalRowStates(createTaskKey(id));
 
   const detail = useQuery({
     queryKey: key,
-    queryFn: () => fetchProject(id),
+    queryFn: async (): Promise<ProjectWithTasks> => {
+      const fresh = await fetchProject(id);
+      const cached = qc.getQueryData<ProjectWithTasks>(key);
+      return {
+        project: fresh.project,
+        tasks: mergeServerRows(fresh.tasks, cached?.tasks, {
+          localAt: "end",
+          hidden: pendingIds(qc, deleteTaskKey(id), TaskIdSchema),
+        }),
+      };
+    },
     refetchInterval: 20_000,
-    retry: (failures, error) =>
-      !(error instanceof TodoApiError && error.status === 404) && failures < 1,
+    retry: (failures, error) => !isMissing(error) && failures < 1,
   });
-
-  const setSync = (taskId: TaskId, state: TaskSyncState | null): void => {
-    setSyncMap((prev) => {
-      const next = new Map(prev);
-      if (state === null) next.delete(taskId);
-      else next.set(taskId, state);
-      return next;
-    });
-  };
 
   const patchTasks = (fn: (tasks: Task[]) => Task[]): void => {
     qc.setQueryData<ProjectWithTasks>(key, (current) =>
@@ -159,17 +180,21 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const taskById = (taskId: TaskId): Task | undefined =>
     qc.getQueryData<ProjectWithTasks>(key)?.tasks.find((t) => t.id === taskId);
 
-  const restoreTask = (task: Task): void => {
+  const putTask = (task: Task): void => {
     patchTasks((tasks) => tasks.map((t) => (t.id === task.id ? task : t)));
   };
 
-  const refreshList = (): void => {
-    void qc.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+  const settle = async (): Promise<void> => {
+    const refreshes = [qc.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })];
+    if (qc.isMutating({ mutationKey: projectMutationsKey(id) }) === 1) {
+      refreshes.push(qc.invalidateQueries({ queryKey: key }));
+    }
+    await Promise.all(refreshes);
   };
 
   const create = useMutation({
-    mutationFn: ({ input, tempId }: { input: CreateTaskInput; tempId: TaskId }) =>
-      createTask(id, input, tempId),
+    mutationKey: createTaskKey(id),
+    mutationFn: ({ input, tempId }: CreateTaskVariables) => createTask(id, input, tempId),
     onMutate: async ({ input, tempId }) => {
       await qc.cancelQueries({ queryKey: key });
       const now = Date.now();
@@ -188,23 +213,19 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
           ? tasks.map((t) => (t.id === tempId ? optimistic : t))
           : [...tasks, optimistic],
       );
-      setSync(tempId, "queued");
-      return { tempId };
     },
-    onError: (_e, _vars, ctx) => {
+    onError: () => {
       if (!navigator.onLine) return;
-      if (ctx !== undefined) setSync(ctx.tempId, "error");
       toast.error("Could not add task — tap retry");
     },
-    onSuccess: (saved, _vars, ctx) => {
-      if (ctx === undefined) return;
-      patchTasks((tasks) => tasks.map((t) => (t.id === ctx.tempId ? saved : t)));
-      setSync(ctx.tempId, null);
+    onSuccess: (saved, { tempId }) => {
+      patchTasks((tasks) => settleLocalRow(tasks, tempId, saved, "end"));
     },
-    onSettled: refreshList,
+    onSettled: settle,
   });
 
   const toggle = useMutation({
+    mutationKey: [...projectMutationsKey(id), "toggle"],
     mutationFn: ({ taskId, done }: { taskId: TaskId; done: boolean }) => setTaskDone(taskId, done),
     onMutate: async ({ taskId, done }) => {
       await qc.cancelQueries({ queryKey: key });
@@ -225,16 +246,18 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       }
       return { prev };
     },
-    onError: (_e, _vars, ctx) => {
+    onError: (error, _vars, ctx) => {
       if (!navigator.onLine) return;
-      if (ctx?.prev !== undefined) restoreTask(ctx.prev);
-      toast.error("Could not update task");
+      if (ctx?.prev !== undefined) putTask(ctx.prev);
+      if (isConflict(error)) toast.info("Someone already changed that task — refreshed");
+      else toast.error("Could not update task");
     },
-    onSuccess: (saved) => restoreTask(saved),
-    onSettled: refreshList,
+    onSuccess: putTask,
+    onSettled: settle,
   });
 
   const edit = useMutation({
+    mutationKey: [...projectMutationsKey(id), "edit-task"],
     mutationFn: ({ taskId, input }: { taskId: TaskId; input: UpdateTaskInput }) =>
       updateTask(taskId, input),
     onMutate: async ({ taskId, input }) => {
@@ -257,13 +280,15 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
     },
     onError: (_e, _vars, ctx) => {
       if (!navigator.onLine) return;
-      if (ctx?.prev !== undefined) restoreTask(ctx.prev);
+      if (ctx?.prev !== undefined) putTask(ctx.prev);
       toast.error("Could not save task");
     },
-    onSuccess: (saved) => restoreTask(saved),
+    onSuccess: putTask,
+    onSettled: settle,
   });
 
   const removeTask = useMutation({
+    mutationKey: deleteTaskKey(id),
     mutationFn: (taskId: TaskId) => deleteTask(taskId),
     onMutate: async (taskId: TaskId) => {
       await qc.cancelQueries({ queryKey: key });
@@ -271,7 +296,6 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       const index = tasks.findIndex((t) => t.id === taskId);
       const prev = index >= 0 ? tasks[index] : undefined;
       patchTasks((list) => list.filter((t) => t.id !== taskId));
-      setSync(taskId, null);
       return { index, prev };
     },
     onError: (_e, _vars, ctx) => {
@@ -279,6 +303,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       const restore = ctx?.prev;
       if (ctx !== undefined && restore !== undefined) {
         patchTasks((list) => {
+          if (list.some((t) => t.id === restore.id)) return list;
           const next = [...list];
           next.splice(Math.min(Math.max(ctx.index, 0), next.length), 0, restore);
           return next;
@@ -286,16 +311,19 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       }
       toast.error("Could not remove task");
     },
-    onSettled: refreshList,
+    onSettled: settle,
   });
 
   const editProject = useMutation({
+    mutationKey: [...projectMutationsKey(id), "edit"],
     mutationFn: (input: UpdateProjectInput) => updateProject(id, input),
     onMutate: async (input: UpdateProjectInput) => {
       await qc.cancelQueries({ queryKey: key });
       await qc.cancelQueries({ queryKey: PROJECTS_QUERY_KEY });
-      const prevDetail = qc.getQueryData<ProjectWithTasks>(key);
-      const prevList = qc.getQueryData<Project[]>(PROJECTS_QUERY_KEY);
+      const prevProject = qc.getQueryData<ProjectWithTasks>(key)?.project;
+      const prevListEntry = qc
+        .getQueryData<Project[]>(PROJECTS_QUERY_KEY)
+        ?.find((p) => p.id === id);
       const apply = (p: Project): Project => ({
         ...p,
         ...(input.name !== undefined ? { name: input.name } : {}),
@@ -309,37 +337,58 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         current?.map((p) => (p.id === id ? apply(p) : p)),
       );
       setDrawer(DRAWER_NONE);
-      return { prevDetail, prevList };
+      return { prevProject, prevListEntry };
     },
     onError: (_e, _vars, ctx) => {
       if (!navigator.onLine) return;
-      if (ctx?.prevDetail !== undefined) qc.setQueryData(key, ctx.prevDetail);
-      if (ctx?.prevList !== undefined) qc.setQueryData(PROJECTS_QUERY_KEY, ctx.prevList);
+      const prevProject = ctx?.prevProject;
+      const prevListEntry = ctx?.prevListEntry;
+      if (prevProject !== undefined) {
+        qc.setQueryData<ProjectWithTasks>(key, (current) =>
+          current === undefined ? current : { ...current, project: prevProject },
+        );
+      }
+      if (prevListEntry !== undefined) {
+        qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current) =>
+          current?.map((p) => (p.id === id ? prevListEntry : p)),
+        );
+      }
       toast.error("Could not save project");
     },
-    onSettled: refreshList,
+    onSettled: settle,
   });
 
   const removeProject = useMutation({
-    mutationFn: () => deleteProject(id),
-    onMutate: async () => {
+    mutationKey: DELETE_PROJECT_KEY,
+    mutationFn: (projectId: ProjectId) => deleteProject(projectId),
+    onMutate: async (projectId: ProjectId) => {
       await qc.cancelQueries({ queryKey: PROJECTS_QUERY_KEY });
-      const prevList = qc.getQueryData<Project[]>(PROJECTS_QUERY_KEY);
+      const list = qc.getQueryData<Project[]>(PROJECTS_QUERY_KEY) ?? [];
+      const index = list.findIndex((p) => p.id === projectId);
+      const prev = index >= 0 ? list[index] : undefined;
       qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current) =>
-        current?.filter((p) => p.id !== id),
+        current?.filter((p) => p.id !== projectId),
       );
-      return { prevList };
+      return { index, prev };
     },
     onError: (_e, _vars, ctx) => {
       if (!navigator.onLine) return;
-      if (ctx?.prevList !== undefined) qc.setQueryData(PROJECTS_QUERY_KEY, ctx.prevList);
+      const restore = ctx?.prev;
+      if (ctx !== undefined && restore !== undefined) {
+        qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) => {
+          if (current.some((p) => p.id === restore.id)) return current;
+          const next = [...current];
+          next.splice(Math.min(Math.max(ctx.index, 0), next.length), 0, restore);
+          return next;
+        });
+      }
       toast.error("Could not delete project");
     },
-    onSuccess: () => {
-      qc.removeQueries({ queryKey: key });
+    onSuccess: (_data, projectId) => {
+      qc.removeQueries({ queryKey: projectQueryKey(projectId) });
       toast.success("Project deleted");
     },
-    onSettled: refreshList,
+    onSettled: () => qc.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY }),
   });
 
   const tasks = detail.data?.tasks ?? [];
@@ -360,7 +409,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
     );
   }
 
-  if (detail.error instanceof TodoApiError && detail.error.status === 404) {
+  if (isMissing(detail.error)) {
     return <Problem title="Project not found" hint="It may have been deleted." onRetry={null} />;
   }
 
@@ -376,24 +425,25 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
 
   const { project } = detail.data;
 
-  const handleRetry = (taskId: TaskId): void => {
-    const task = tasks.find((t) => t.id === taskId);
-    if (task === undefined || !isTempId(taskId)) return;
-    const input: CreateTaskInput =
-      task.notes === null ? { title: task.title } : { title: task.title, notes: task.notes };
-    create.mutate({ input, tempId: taskId });
-  };
-
   const handlersFor = (taskId: TaskId): TaskRowHandlers => ({
     onToggle: (done: boolean) => {
-      if (!isTempId(taskId)) toggle.mutate({ taskId, done });
+      if (!isLocalId(taskId)) toggle.mutate({ taskId, done });
     },
-    onRetry: () => handleRetry(taskId),
+    onRetry: () => {
+      const task = tasks.find((t) => t.id === taskId);
+      if (task === undefined || !isLocalId(taskId)) return;
+      const input: CreateTaskInput =
+        task.notes === null ? { title: task.title } : { title: task.title, notes: task.notes };
+      create.mutate({ input, tempId: taskId });
+    },
+    onDiscard: () => {
+      if (isLocalId(taskId)) patchTasks((list) => list.filter((t) => t.id !== taskId));
+    },
     onEdit: () => {
-      if (!isTempId(taskId)) setDrawer({ kind: "edit_task", id: taskId });
+      if (!isLocalId(taskId)) setDrawer({ kind: "edit_task", id: taskId });
     },
     onRemove: () => {
-      if (!isTempId(taskId)) setDrawer({ kind: "remove_task", id: taskId });
+      if (!isLocalId(taskId)) setDrawer({ kind: "remove_task", id: taskId });
     },
   });
 
@@ -438,7 +488,11 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       {tasks.length === 0 ? (
         <EmptyState icon={ListChecksIcon} title="No tasks yet" action="to add the first one." />
       ) : (
-        <TaskList tasks={tasks} syncStates={sync} handlersFor={handlersFor} />
+        <TaskList
+          tasks={tasks}
+          syncStateOf={(taskId) => syncStateOf(taskId, localStates)}
+          handlersFor={handlersFor}
+        />
       )}
       <Fab onClick={() => setDrawer({ kind: "add_task" })} label="Add task" />
 
@@ -450,7 +504,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       >
         <AddTaskForm
           onSubmit={(input) => {
-            create.mutate({ input, tempId: parseTaskId(tempIdSeed()) });
+            create.mutate({ input, tempId: parseTaskId(localIdSeed()) });
             setDrawer(DRAWER_NONE);
           }}
           onCancel={() => setDrawer(DRAWER_NONE)}
@@ -466,7 +520,6 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         {editingTask !== null && (
           <EditTaskForm
             initial={editingTask}
-            pending={false}
             onSubmit={(input) => edit.mutate({ taskId: editingTask.id, input })}
             onCancel={() => setDrawer(DRAWER_NONE)}
           />
@@ -481,7 +534,6 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       >
         <EditProjectForm
           initial={project}
-          pending={false}
           onSubmit={(input) => editProject.mutate(input)}
           onCancel={() => setDrawer(DRAWER_NONE)}
         />
@@ -506,7 +558,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         confirmLabel="Delete project"
         onConfirm={() => {
           setDrawer(DRAWER_NONE);
-          removeProject.mutate();
+          removeProject.mutate(id);
           void navigate({ to: "/todo" });
         }}
         onClose={() => setDrawer(DRAWER_NONE)}

@@ -6,7 +6,6 @@ type FormDrawerProps = {
   open: boolean;
   title: string;
   description: string;
-  locked?: boolean;
   onClose: () => void;
   children: ReactNode;
 };
@@ -15,14 +14,13 @@ export const FormDrawer = ({
   open,
   title,
   description,
-  locked = false,
   onClose,
   children,
 }: FormDrawerProps): ReactElement => (
   <Drawer
     open={open}
     onOpenChange={(next) => {
-      if (next || locked) return;
+      if (next) return;
       onClose();
     }}
   >

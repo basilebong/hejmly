@@ -7,9 +7,9 @@ export const todoProjects = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     description: text("description"),
-    createdByUserId: text("created_by_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" })
       .$onUpdate(() => new Date())
@@ -30,9 +30,9 @@ export const todoTasks = sqliteTable(
     title: text("title").notNull(),
     notes: text("notes"),
     statusJson: text("status_json").notNull(),
-    addedByUserId: text("added_by_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    addedByUserId: text("added_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" })
       .$onUpdate(() => new Date())

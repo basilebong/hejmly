@@ -4,8 +4,14 @@ export const PROJECTS_QUERY_KEY = ["todo", "projects"] as const;
 
 export const projectQueryKey = (id: ProjectId) => ["todo", "project", id] as const;
 
-export const TEMP_ID_PREFIX = "tmp_";
+export const CREATE_PROJECT_KEY = ["todo", "create-project"] as const;
 
-export const isTempId = (id: string): boolean => id.startsWith(TEMP_ID_PREFIX);
+export const DELETE_PROJECT_KEY = ["todo", "delete-project"] as const;
 
-export const tempIdSeed = (): string => `${TEMP_ID_PREFIX}${crypto.randomUUID()}`;
+export const projectMutationsKey = (id: ProjectId) => ["todo", "project", id] as const;
+
+export const createTaskKey = (id: ProjectId) =>
+  [...projectMutationsKey(id), "create-task"] as const;
+
+export const deleteTaskKey = (id: ProjectId) =>
+  [...projectMutationsKey(id), "delete-task"] as const;

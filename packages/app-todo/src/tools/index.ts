@@ -49,11 +49,6 @@ const errorText = (error: TodoError): string =>
     .with({ kind: "already_in_state" }, (e) => `Task is already ${e.state}.`)
     .exhaustive();
 
-const errorResult = (error: TodoError) => ({
-  content: [{ type: "text" as const, text: errorText(error) }],
-  isError: true,
-});
-
 const projectResult = (text: string, project: Project) => ({
   content: [{ type: "text" as const, text }],
   structuredContent: { project },
@@ -74,6 +69,15 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
 
   const record = (action: string, metadata: Record<string, unknown>): Promise<void> =>
     safely("audit", audit.record({ userId: actor, action, via: "mcp", metadata }));
+
+  const failure = async (action: string, error: TodoError, metadata: Record<string, unknown>) => {
+    await record(action, { ...metadata, error: error.kind });
+    return {
+      content: [{ type: "text" as const, text: errorText(error) }],
+      structuredContent: { error },
+      isError: true,
+    };
+  };
 
   server.registerTool(
     "todo__list_projects",
@@ -101,7 +105,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ name, description }) => {
       const result = await service.createProject({ name, description }, actor);
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("todo__add_project", result.error, { name });
       await record("todo__add_project", { projectId: result.value.id });
       return projectResult(`Created project ${projectText(result.value)}.`, result.value);
     },
@@ -120,7 +124,8 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ projectId, name, description }) => {
       const result = await service.updateProject(parseProjectId(projectId), { name, description });
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err")
+        return failure("todo__update_project", result.error, { projectId });
       await record("todo__update_project", { projectId: result.value.id });
       return projectResult(`Updated project ${projectText(result.value)}.`, result.value);
     },
@@ -135,7 +140,8 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ projectId }) => {
       const result = await service.removeProject(parseProjectId(projectId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err")
+        return failure("todo__remove_project", result.error, { projectId });
       await record("todo__remove_project", { projectId: result.value.id });
       return {
         content: [{ type: "text" as const, text: `Removed project ${result.value.id}.` }],
@@ -156,7 +162,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ projectId, status }) => {
       const result = await service.getProject(parseProjectId(projectId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("todo__list_tasks", result.error, { projectId });
       const { project } = result.value;
       const tasks =
         status === undefined || status === "all"
@@ -188,7 +194,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ projectId, title, notes }) => {
       const result = await service.createTask(parseProjectId(projectId), { title, notes }, actor);
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("todo__add_task", result.error, { projectId });
       await record("todo__add_task", {
         projectId: result.value.projectId,
         taskId: result.value.id,
@@ -206,7 +212,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ taskId }) => {
       const result = await service.completeTask(parseTaskId(taskId), actor);
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("todo__complete_task", result.error, { taskId });
       await record("todo__complete_task", { taskId: result.value.id });
       return taskResult(`Completed "${result.value.title}".`, result.value);
     },
@@ -221,7 +227,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ taskId }) => {
       const result = await service.reopenTask(parseTaskId(taskId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("todo__reopen_task", result.error, { taskId });
       await record("todo__reopen_task", { taskId: result.value.id });
       return taskResult(`Reopened "${result.value.title}".`, result.value);
     },
@@ -240,7 +246,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ taskId, title, notes }) => {
       const result = await service.updateTask(parseTaskId(taskId), { title, notes });
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("todo__update_task", result.error, { taskId });
       await record("todo__update_task", { taskId: result.value.id });
       return taskResult(`Updated ${taskText(result.value)}.`, result.value);
     },
@@ -255,7 +261,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     },
     async ({ taskId }) => {
       const result = await service.removeTask(parseTaskId(taskId));
-      if (result.kind === "err") return errorResult(result.error);
+      if (result.kind === "err") return failure("todo__remove_task", result.error, { taskId });
       await record("todo__remove_task", { taskId: result.value.id });
       return {
         content: [{ type: "text" as const, text: `Removed task ${result.value.id}.` }],

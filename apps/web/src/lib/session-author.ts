@@ -1,9 +1,12 @@
-import type { TodoAuthor } from "@hejmly/app-todo/shared";
-import { parseUserId } from "@hejmly/core/shared";
+import { parseUserId, type UserId } from "@hejmly/core/shared";
 
 import { useSession } from "@/lib/auth-client";
 
-export const useTodoIdentity = (): TodoAuthor => {
+export type SessionAuthor =
+  | { kind: "user"; id: UserId; name: string; initial: string }
+  | { kind: "unknown"; name: string; initial: string };
+
+export const useSessionAuthor = (): SessionAuthor => {
   const session = useSession();
   const user = session.data?.user;
   if (user === undefined) return { kind: "unknown", name: "You", initial: "·" };

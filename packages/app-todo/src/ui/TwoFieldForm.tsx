@@ -17,7 +17,6 @@ type TwoFieldFormProps<T> = {
   copy: TwoFieldFormCopy;
   initialPrimary: string;
   initialSecondary: string;
-  pending: boolean;
   selectOnFocus: boolean;
   validate: (primary: string, secondary: string) => DraftResult<T>;
   onSubmit: (value: T) => void;
@@ -28,7 +27,6 @@ export const TwoFieldForm = <T,>({
   copy,
   initialPrimary,
   initialSecondary,
-  pending,
   selectOnFocus,
   validate,
   onSubmit,
@@ -46,7 +44,6 @@ export const TwoFieldForm = <T,>({
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
-    if (pending) return;
     match(validate(primary, secondary))
       .with({ kind: "unchanged" }, () => onCancel())
       .with({ kind: "error" }, (r) => setError(r.message))
@@ -120,16 +117,14 @@ export const TwoFieldForm = <T,>({
       <div className="space-y-2.5 pt-4">
         <button
           type="submit"
-          disabled={pending}
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 font-medium text-base text-white transition active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100"
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 font-medium text-base text-white transition active:scale-[0.98]"
         >
-          {pending ? "Saving…" : copy.submitLabel}
+          {copy.submitLabel}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          disabled={pending}
-          className="flex min-h-12 w-full items-center justify-center rounded-2xl text-base text-slate-600 disabled:opacity-60"
+          className="flex min-h-12 w-full items-center justify-center rounded-2xl text-base text-slate-600"
         >
           Cancel
         </button>

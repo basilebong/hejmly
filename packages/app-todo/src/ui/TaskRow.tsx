@@ -1,22 +1,21 @@
-import { ArrowsClockwiseIcon, CheckIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { ArrowsClockwiseIcon, CheckIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
 import type { ReactElement } from "react";
-import type { Task } from "../shared/index.ts";
+import type { SyncState, Task } from "../shared/index.ts";
 import { Avatar } from "./Avatar.tsx";
 import { cn } from "./cn.ts";
 import { TaskActionsMenu } from "./TaskActionsMenu.tsx";
 
-export type TaskSyncState = "synced" | "queued" | "error";
-
 export type TaskRowHandlers = {
   onToggle: (next: boolean) => void;
   onRetry: () => void;
+  onDiscard: () => void;
   onEdit: () => void;
   onRemove: () => void;
 };
 
 type TaskRowProps = TaskRowHandlers & {
   task: Task;
-  syncState: TaskSyncState;
+  syncState: SyncState;
 };
 
 export const TaskRow = ({
@@ -24,6 +23,7 @@ export const TaskRow = ({
   syncState,
   onToggle,
   onRetry,
+  onDiscard,
   onEdit,
   onRemove,
 }: TaskRowProps): ReactElement => {
@@ -93,6 +93,16 @@ export const TaskRow = ({
       <div className="flex shrink-0 items-center gap-1">
         {!queued && !error && <Avatar author={task.addedBy} />}
         {queued && <ArrowsClockwiseIcon size={16} className="animate-spin text-slate-300" />}
+        {error && (
+          <button
+            type="button"
+            onClick={onDiscard}
+            aria-label={`Discard ${task.title}`}
+            className="grid size-11 shrink-0 place-items-center rounded-full text-slate-400 transition active:bg-slate-100"
+          >
+            <XIcon size={16} weight="bold" />
+          </button>
+        )}
         {!queued && !error && (
           <TaskActionsMenu
             taskTitle={task.title}

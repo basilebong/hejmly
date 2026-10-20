@@ -1,7 +1,6 @@
 import type { SessionVariables } from "@hejmly/core/server";
 import { parseUserId } from "@hejmly/core/shared";
 import { Hono } from "hono";
-import { match } from "ts-pattern";
 import * as v from "valibot";
 import {
   CreateProjectInputSchema,
@@ -20,19 +19,7 @@ import type { TodoService } from "./service.ts";
 
 export type TodoDeps = { service: TodoService };
 
-const handleError = (e: TodoError) =>
-  match(e)
-    .with(
-      { kind: "project_not_found" },
-      (it) => ({ status: todoErrorStatus(it), body: it }) as const,
-    )
-    .with({ kind: "task_not_found" }, (it) => ({ status: todoErrorStatus(it), body: it }) as const)
-    .with({ kind: "invalid_input" }, (it) => ({ status: todoErrorStatus(it), body: it }) as const)
-    .with(
-      { kind: "already_in_state" },
-      (it) => ({ status: todoErrorStatus(it), body: it }) as const,
-    )
-    .exhaustive();
+const handleError = (e: TodoError) => ({ status: todoErrorStatus(e), body: e }) as const;
 
 type ParsedBody<T> = { ok: true; value: T } | { ok: false };
 

@@ -1,16 +1,25 @@
-import { CaretRightIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, WarningCircleIcon, XIcon } from "@phosphor-icons/react";
 import type { ReactElement } from "react";
-import type { Project } from "../shared/index.ts";
+import type { Project, SyncState } from "../shared/index.ts";
 import { cn } from "./cn.ts";
 import { paletteFor } from "./colors.ts";
 import { ProgressBar } from "./ProgressBar.tsx";
 
 type ProjectRowProps = {
   project: Project;
-  saving?: boolean;
+  syncState: SyncState;
+  onRetry: () => void;
+  onDiscard: () => void;
 };
 
-export const ProjectRow = ({ project, saving = false }: ProjectRowProps): ReactElement => {
+export const ProjectRow = ({
+  project,
+  syncState,
+  onRetry,
+  onDiscard,
+}: ProjectRowProps): ReactElement => {
+  const saving = syncState === "queued";
+  const failed = syncState === "error";
   const palette = paletteFor(project.id);
   const { open, done } = project.taskCounts;
   const total = open + done;
@@ -28,7 +37,7 @@ export const ProjectRow = ({ project, saving = false }: ProjectRowProps): ReactE
           <span
             className={cn(
               "truncate font-medium text-base leading-tight",
-              saving ? "text-slate-400 italic" : "text-slate-900",
+              saving || failed ? "text-slate-400 italic" : "text-slate-900",
             )}
           >
             {project.name}
@@ -38,6 +47,16 @@ export const ProjectRow = ({ project, saving = false }: ProjectRowProps): ReactE
               <span className="size-1.5 animate-pulse rounded-full bg-slate-400" />
               Saving
             </span>
+          )}
+          {failed && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex min-h-11 shrink-0 items-center gap-1 font-semibold text-[10px] text-rose-600 uppercase tracking-wider"
+            >
+              <WarningCircleIcon size={11} weight="fill" />
+              Retry
+            </button>
           )}
         </div>
         {project.description !== null && project.description.length > 0 && (
@@ -58,7 +77,18 @@ export const ProjectRow = ({ project, saving = false }: ProjectRowProps): ReactE
           )}
         </div>
       </div>
-      <CaretRightIcon size={16} weight="bold" className="shrink-0 text-slate-300" />
+      {failed ? (
+        <button
+          type="button"
+          onClick={onDiscard}
+          aria-label={`Discard ${project.name}`}
+          className="grid size-11 shrink-0 place-items-center rounded-full text-slate-400 transition active:bg-slate-100"
+        >
+          <XIcon size={16} weight="bold" />
+        </button>
+      ) : (
+        <CaretRightIcon size={16} weight="bold" className="shrink-0 text-slate-300" />
+      )}
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { users } from "@hejmly/core/server/schema";
 import { err, isErr, ok, type Result, type UserId } from "@hejmly/core/shared";
 import { monotonicFactory } from "ulid";
 import {
+  blankToNull,
   type CreateProjectInput,
   type CreateTaskInput,
   type Project,
@@ -112,7 +113,7 @@ export const createTodoService = (db: Db): TodoService => {
         .values({
           id,
           name: input.name,
-          description: input.description ?? null,
+          description: blankToNull(input.description ?? null),
           createdByUserId: by,
           createdAt: now,
           updatedAt: now,
@@ -131,7 +132,7 @@ export const createTodoService = (db: Db): TodoService => {
         updatedAt: new Date(),
       };
       if (input.name !== undefined) patch.name = input.name;
-      if (input.description !== undefined) patch.description = input.description;
+      if (input.description !== undefined) patch.description = blankToNull(input.description);
       const updated = await db
         .update(todoProjects)
         .set(patch)
@@ -168,7 +169,7 @@ export const createTodoService = (db: Db): TodoService => {
           id,
           projectId,
           title: input.title,
-          notes: input.notes ?? null,
+          notes: blankToNull(input.notes ?? null),
           statusJson: serializeStatus({ kind: "open" }),
           addedByUserId: by,
           createdAt: now,
@@ -191,7 +192,7 @@ export const createTodoService = (db: Db): TodoService => {
         updatedAt: new Date(),
       };
       if (input.title !== undefined) patch.title = input.title;
-      if (input.notes !== undefined) patch.notes = input.notes;
+      if (input.notes !== undefined) patch.notes = blankToNull(input.notes);
       const updated = await db.update(todoTasks).set(patch).where(eq(todoTasks.id, id)).returning();
       const row = updated[0];
       if (row === undefined) return err({ kind: "task_not_found", id });

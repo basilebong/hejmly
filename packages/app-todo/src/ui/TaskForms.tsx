@@ -39,7 +39,6 @@ export const AddTaskForm = ({ onSubmit, onCancel }: AddTaskFormProps): ReactElem
     copy={ADD_COPY}
     initialPrimary=""
     initialSecondary=""
-    pending={false}
     selectOnFocus={false}
     validate={(title, notes) => parseTaskDraft({ title, notes })}
     onSubmit={onSubmit}
@@ -49,22 +48,15 @@ export const AddTaskForm = ({ onSubmit, onCancel }: AddTaskFormProps): ReactElem
 
 type EditTaskFormProps = {
   initial: { title: string; notes: string | null };
-  pending: boolean;
   onSubmit: (input: UpdateTaskInput) => void;
   onCancel: () => void;
 };
 
-export const EditTaskForm = ({
-  initial,
-  pending,
-  onSubmit,
-  onCancel,
-}: EditTaskFormProps): ReactElement => (
+export const EditTaskForm = ({ initial, onSubmit, onCancel }: EditTaskFormProps): ReactElement => (
   <TwoFieldForm
     copy={EDIT_COPY}
     initialPrimary={initial.title}
     initialSecondary={initial.notes ?? ""}
-    pending={pending}
     selectOnFocus
     validate={(title, notes) => diffTaskDraft(initial, { title, notes })}
     onSubmit={onSubmit}

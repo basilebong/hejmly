@@ -11,4 +11,4 @@ export { ProjectsSkeleton, TasksSkeleton } from "./Skeletons.tsx";
 export { TaskActionsMenu } from "./TaskActionsMenu.tsx";
 export { AddTaskForm, EditTaskForm } from "./TaskForms.tsx";
 export { TaskList } from "./TaskList.tsx";
-export { TaskRow, type TaskRowHandlers, type TaskSyncState } from "./TaskRow.tsx";
+export { TaskRow, type TaskRowHandlers } from "./TaskRow.tsx";

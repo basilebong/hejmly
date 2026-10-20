@@ -51,6 +51,15 @@ const auditActions = (db: Db): string[] =>
     )
     .filter((action): action is string => typeof action === "string");
 
+const auditMetadata = (db: Db, action: string): unknown => {
+  const row = db.$client
+    .query("SELECT metadata_json FROM audit_log WHERE action = ? ORDER BY created_at DESC")
+    .get(action);
+  const parsed = v.parse(v.object({ metadata_json: v.string() }), row);
+  const metadata: unknown = JSON.parse(parsed.metadata_json);
+  return metadata;
+};
+
 const ProjectContent = v.object({ project: v.object({ id: v.string() }) });
 const TaskContent = v.object({ task: v.object({ id: v.string() }) });
 
@@ -165,6 +174,9 @@ describe("todo MCP tools", () => {
       const again = await call(client, "todo__complete_task", { taskId: dig });
       expect(again.isError).toBe(true);
       expect(textOf(again)).toBe("Task is already done.");
+      expect(again.structuredContent).toEqual({
+        error: { kind: "already_in_state", state: "done" },
+      });
     });
   });
 
@@ -180,6 +192,9 @@ describe("todo MCP tools", () => {
       const missingTask = await call(client, "todo__remove_task", { taskId: "nope" });
       expect(missingTask.isError).toBe(true);
       expect(textOf(missingTask)).toBe('No task found with id "nope".');
+      expect(missingTask.structuredContent).toEqual({
+        error: { kind: "task_not_found", id: "nope" },
+      });
     });
   });
 
@@ -211,6 +226,19 @@ describe("todo MCP tools", () => {
     });
   });
 
+  test("whitespace-only description and notes become null, like over HTTP", async () => {
+    await withClient(async (client) => {
+      const project = await call(client, "todo__add_project", { name: "Garden", description: " " });
+      expect(project.structuredContent).toMatchObject({ project: { description: null } });
+      const projectId = v.parse(ProjectContent, project.structuredContent).project.id;
+      const task = await call(client, "todo__add_task", { projectId, title: "Dig", notes: "  " });
+      expect(task.structuredContent).toMatchObject({ task: { notes: null } });
+      const taskId = v.parse(TaskContent, task.structuredContent).task.id;
+      const edited = await call(client, "todo__update_task", { taskId, notes: "   " });
+      expect(edited.structuredContent).toMatchObject({ task: { notes: null } });
+    });
+  });
+
   test("remove_project deletes its tasks and every call is audited", async () => {
     await withClient(async (client, _actor, db) => {
       const projectId = await addProject(client, "Garden");
@@ -226,7 +254,12 @@ describe("todo MCP tools", () => {
         "todo__add_project",
         "todo__add_task",
         "todo__remove_project",
+        "todo__complete_task",
       ]);
+      expect(auditMetadata(db, "todo__complete_task")).toEqual({
+        taskId: dig,
+        error: "task_not_found",
+      });
     });
   });
 });

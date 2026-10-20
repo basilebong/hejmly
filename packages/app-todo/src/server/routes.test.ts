@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { type Auth, createRequireSession, type SessionVariables } from "@hejmly/core/server";
+import {
+  type Auth,
+  createRequireSession,
+  type Db,
+  type SessionVariables,
+} from "@hejmly/core/server";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { Hono } from "hono";
 import * as v from "valibot";
@@ -7,36 +12,51 @@ import { createTodoRoutes } from "./routes.ts";
 import { createTodoService } from "./service.ts";
 
 const TEST_EMAIL = "basile@example.com";
+const MEMBER_EMAIL = "anna@example.com";
 
 type TestApp = Hono<{ Variables: SessionVariables }>;
 
-type TodoTestContext = { app: TestApp; cookie: string; userId: string };
+type Member = { userId: string; cookie: string };
+
+type TodoTestContext = {
+  app: TestApp;
+  cookie: string;
+  userId: string;
+  db: Db;
+  addMember: () => Promise<Member>;
+};
 
 const seedSessionCookie = async (
   auth: Auth,
   signSessionCookie: (token: string) => Promise<string>,
-): Promise<{ userId: string; cookie: string }> => {
+  who: { name: string; email: string } = { name: "Basile", email: TEST_EMAIL },
+): Promise<Member> => {
   const ctx = await auth.$context;
-  const user = await ctx.internalAdapter.createUser(
-    { name: "Basile", email: TEST_EMAIL },
-    googleProvisioningSource,
-  );
+  const user = await ctx.internalAdapter.createUser(who, googleProvisioningSource);
   const session = await ctx.internalAdapter.createSession(user.id);
   const signed = await signSessionCookie(session.token);
   return { userId: user.id, cookie: `Hejmly.session_token=${signed}` };
 };
 
 const withTodo = async (fn: (ctx: TodoTestContext) => Promise<void>): Promise<void> => {
-  await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db, signSessionCookie }) => {
-    const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
-    const app: TestApp = new Hono<{ Variables: SessionVariables }>()
-      .use("/api/*", createRequireSession(auth))
-      .route("/api/todo", createTodoRoutes({ service: createTodoService(db) }));
-    await fn({ app, cookie, userId });
-  });
+  await withTestAuth(
+    { allowedEmails: `${TEST_EMAIL},${MEMBER_EMAIL}` },
+    async ({ auth, db, signSessionCookie }) => {
+      const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
+      const app: TestApp = new Hono<{ Variables: SessionVariables }>()
+        .use("/api/*", createRequireSession(auth))
+        .route("/api/todo", createTodoRoutes({ service: createTodoService(db) }));
+      const addMember = () =>
+        seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
+      await fn({ app, cookie, userId, db, addMember });
+    },
+  );
 };
 
-const AuthorSchema = v.object({ kind: v.literal("user"), id: v.string(), name: v.string() });
+const AuthorSchema = v.union([
+  v.object({ kind: v.literal("user"), id: v.string(), name: v.string() }),
+  v.object({ kind: v.literal("unknown"), name: v.string() }),
+]);
 
 const ProjectSchema = v.object({
   id: v.string(),
@@ -148,6 +168,17 @@ describe("todo routes", () => {
           createdBy: { kind: "user", id: userId, name: "Basile" },
           taskCounts: { open: 0, done: 0 },
         });
+      });
+    });
+
+    test("a whitespace-only description is stored as no description", async () => {
+      await withTodo(async ({ app, cookie }) => {
+        const created = await createProject(app, cookie, { name: "Garden", description: "   " });
+        expect(created.description).toBeNull();
+        const res = await send(app, cookie, "PATCH", `/api/todo/projects/${created.id}`, {
+          description: "  ",
+        });
+        expect((await read(res, ProjectEnvelope)).project.description).toBeNull();
       });
     });
 
@@ -271,6 +302,47 @@ describe("todo routes", () => {
     });
   });
 
+  describe("household members", () => {
+    test("removing a member keeps everyone's projects and tasks, credited to someone unknown", async () => {
+      await withTodo(async ({ app, cookie, userId, db, addMember }) => {
+        const anna = await addMember();
+        const garden = await createProject(app, cookie, { name: "Garden" });
+        await createTask(app, cookie, garden.id, { title: "Dig" });
+        await createTask(app, anna.cookie, garden.id, { title: "Sow" });
+        const annas = await createProject(app, anna.cookie, { name: "Taxes" });
+        await createTask(app, cookie, annas.id, { title: "Find receipts" });
+
+        db.$client.run("DELETE FROM users WHERE id = ?", [userId]);
+
+        const list = await read(
+          await send(app, anna.cookie, "GET", "/api/todo/projects"),
+          ProjectList,
+        );
+        expect(list.projects.map((p) => [p.name, p.createdBy.kind, p.taskCounts.open])).toEqual([
+          ["Taxes", "user", 1],
+          ["Garden", "unknown", 2],
+        ]);
+
+        const detail = await read(
+          await send(app, anna.cookie, "GET", `/api/todo/projects/${garden.id}`),
+          ProjectDetail,
+        );
+        expect(detail.tasks.map((t) => [t.title, t.addedBy.kind])).toEqual([
+          ["Dig", "unknown"],
+          ["Sow", "user"],
+        ]);
+
+        const theirs = await read(
+          await send(app, anna.cookie, "GET", `/api/todo/projects/${annas.id}`),
+          ProjectDetail,
+        );
+        expect(theirs.tasks.map((t) => [t.title, t.addedBy.kind])).toEqual([
+          ["Find receipts", "unknown"],
+        ]);
+      });
+    });
+  });
+
   describe("tasks", () => {
     test("create adds an open task attributed to the user", async () => {
       await withTodo(async ({ app, cookie, userId }) => {
@@ -329,6 +401,18 @@ describe("todo routes", () => {
 
         const bad = await send(app, cookie, "PATCH", `/api/todo/tasks/${t.id}`, { done: "yes" });
         expect(bad.status).toBe(400);
+      });
+    });
+
+    test("whitespace-only notes are stored as no notes", async () => {
+      await withTodo(async ({ app, cookie }) => {
+        const p = await createProject(app, cookie, { name: "Garden" });
+        const t = await createTask(app, cookie, p.id, { title: "Dig", notes: "  " });
+        expect(t.notes).toBeNull();
+        const res = await send(app, cookie, "PATCH", `/api/todo/tasks/${t.id}/content`, {
+          notes: " ",
+        });
+        expect((await read(res, TaskEnvelope)).task.notes).toBeNull();
       });
     });
 
