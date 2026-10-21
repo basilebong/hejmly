@@ -13,34 +13,47 @@ import { createRecipeRoutes } from "./routes.ts";
 import { createRecipeService } from "./service.ts";
 
 const TEST_EMAIL = "basile@example.com";
+const MEMBER_EMAIL = "anna@example.com";
 
 type TestApp = Hono<{ Variables: SessionVariables }>;
 
-type RecipeTestContext = { app: TestApp; cookie: string; userId: string; db: Db; auth: Auth };
+type Member = { userId: string; cookie: string };
+
+type RecipeTestContext = {
+  app: TestApp;
+  cookie: string;
+  userId: string;
+  db: Db;
+  auth: Auth;
+  addMember: () => Promise<Member>;
+};
 
 const seedSessionCookie = async (
   auth: Auth,
   signSessionCookie: (token: string) => Promise<string>,
-): Promise<{ userId: string; cookie: string }> => {
+  who: { name: string; email: string } = { name: "Basile", email: TEST_EMAIL },
+): Promise<Member> => {
   const ctx = await auth.$context;
-  const user = await ctx.internalAdapter.createUser(
-    { name: "Basile", email: TEST_EMAIL },
-    googleProvisioningSource,
-  );
+  const user = await ctx.internalAdapter.createUser(who, googleProvisioningSource);
   const session = await ctx.internalAdapter.createSession(user.id);
   const signed = await signSessionCookie(session.token);
   return { userId: user.id, cookie: `Hejmly.session_token=${signed}` };
 };
 
 const withRecipes = async (fn: (ctx: RecipeTestContext) => Promise<void>): Promise<void> => {
-  await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db, signSessionCookie }) => {
-    const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
-    const service = createRecipeService(db);
-    const app: TestApp = new Hono<{ Variables: SessionVariables }>()
-      .use("/api/*", createRequireSession(auth))
-      .route("/api/recipes", createRecipeRoutes({ service }));
-    await fn({ app, cookie, userId, db, auth });
-  });
+  await withTestAuth(
+    { allowedEmails: `${TEST_EMAIL},${MEMBER_EMAIL}` },
+    async ({ auth, db, signSessionCookie }) => {
+      const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
+      const service = createRecipeService(db);
+      const app: TestApp = new Hono<{ Variables: SessionVariables }>()
+        .use("/api/*", createRequireSession(auth))
+        .route("/api/recipes", createRecipeRoutes({ service }));
+      const addMember = () =>
+        seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
+      await fn({ app, cookie, userId, db, auth, addMember });
+    },
+  );
 };
 
 const sampleRecipe = (overrides: Partial<CreateRecipeInput> = {}): CreateRecipeInput => ({
@@ -121,6 +134,44 @@ const postRecipe = async (
 };
 
 describe("recipe routes", () => {
+  describe("household members", () => {
+    test("removing a member keeps their recipes in the shared book, credited to someone", async () => {
+      await withRecipes(async ({ app, cookie, userId, db, addMember }) => {
+        const anna = await addMember();
+        const mine = await postRecipe(app, cookie, { ...sampleRecipe(), title: "Carbonara" });
+        await postRecipe(app, anna.cookie, { ...sampleRecipe(), title: "Risotto" });
+
+        db.$client.run("DELETE FROM users WHERE id = ?", [userId]);
+
+        const list = await app.request("/api/recipes", { headers: { cookie: anna.cookie } });
+        expect(list.status).toBe(200);
+        const { recipes } = await parseJsonBody(list, RecipeListSchema);
+        expect(recipes.map((r) => [r.title, r.cook.name]).sort()).toEqual([
+          ["Carbonara", "Someone"],
+          ["Risotto", "Anna"],
+        ]);
+
+        const edited = await app.request(`/api/recipes/${mine.id}`, {
+          method: "PUT",
+          headers: { cookie: anna.cookie, "content-type": "application/json" },
+          body: JSON.stringify({ ...sampleRecipe(), title: "Carbonara, Roman style" }),
+        });
+        expect(edited.status).toBe(200);
+        const { recipe } = await parseJsonBody(edited, RecipeEnvelopeSchema);
+        expect([recipe.title, recipe.cook.name]).toEqual(["Carbonara, Roman style", "Someone"]);
+      });
+    });
+  });
+
+  test("a recipe id longer than 64 characters is rejected as invalid, 64 is well-formed", async () => {
+    await withRecipes(async ({ app, cookie }) => {
+      const tooLong = await app.request(`/api/recipes/${"x".repeat(65)}`, { headers: { cookie } });
+      expect(tooLong.status).toBe(400);
+      const atLimit = await app.request(`/api/recipes/${"x".repeat(64)}`, { headers: { cookie } });
+      expect(atLimit.status).toBe(404);
+    });
+  });
+
   describe("auth", () => {
     test("every route is 401 without a session", async () => {
       await withRecipes(async ({ app }) => {

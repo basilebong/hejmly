@@ -8,9 +8,9 @@ export const groceryItems = sqliteTable(
     name: text("name").notNull(),
     description: text("description"),
     statusJson: text("status_json").notNull(),
-    addedByUserId: text("added_by_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    addedByUserId: text("added_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" })
       .$onUpdate(() => new Date())

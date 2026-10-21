@@ -12,6 +12,7 @@ COPY apps/web/package.json      ./apps/web/
 COPY packages/core/package.json ./packages/core/
 COPY packages/app-grocery/package.json ./packages/app-grocery/
 COPY packages/app-recipes/package.json ./packages/app-recipes/
+COPY packages/app-todo/package.json ./packages/app-todo/
 
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     corepack enable && corepack prepare --activate \

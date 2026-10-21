@@ -11,11 +11,17 @@ export {
   type AuditVia,
   createAuditRecorder,
 } from "./audit/recorder.ts";
+export { createToolAuditor, type ToolAuditor, type ToolFailure } from "./audit/tool-auditor.ts";
 export { isAllowedEmail, parseAllowedEmails } from "./auth/allowlist.ts";
 export { linkExistingClientsToResource, type ResourceBackfill } from "./auth/backfill.ts";
 export { checkEmailAllowed } from "./auth/check-email-allowed.ts";
 export { type Auth, type CreateAuthOptions, createAuth } from "./auth/index.ts";
 export { createDb, type Db } from "./db/index.ts";
+export {
+  describeForeignKeyViolations,
+  type ForeignKeyViolation,
+  foreignKeyViolations,
+} from "./db/integrity.ts";
 export { createIdempotency } from "./idempotency/middleware.ts";
 export {
   type AuthedMcpHandler,

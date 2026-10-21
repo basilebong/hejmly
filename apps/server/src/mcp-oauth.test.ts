@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { CleanupScheduler } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
+import { createTodoService } from "@hejmly/app-todo/server";
 import {
   createAssistantsService,
   createAuditRecorder,
@@ -103,6 +104,7 @@ const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<voi
           assistants: { service: createAssistantsService(db) },
           grocery: { service: createGroceryService(db), cleanup: noopCleanup },
           recipes: { service: createRecipeService(db) },
+          todo: { service: createTodoService(db) },
         });
 
         await run({ baseURL, cookie, userId: user.id, db });
@@ -258,6 +260,28 @@ describe("MCP over OAuth (end-to-end)", () => {
     });
   });
 
+  test("the same token reaches the todo tools", async () => {
+    await withMcpServer(async ({ baseURL, cookie, db }) => {
+      const { accessToken } = await runClaudeOAuthFlow(baseURL, cookie);
+
+      const call = await callMcp(baseURL, accessToken, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "todo__add_project", arguments: { name: "Garden via Claude" } },
+      });
+      expect(call.status).toBe(200);
+      expect(JSON.stringify(dataPayload(await call.text()))).toContain("Garden via Claude");
+
+      expect(db.$client.query("SELECT name FROM todo_projects").all()).toEqual([
+        { name: "Garden via Claude" },
+      ]);
+      expect(db.$client.query("SELECT action, via FROM audit_log").all()).toEqual([
+        { action: "todo__add_project", via: "mcp" },
+      ]);
+    });
+  });
+
   test("revoking an assistant removes the consent but the live JWT survives its TTL window", async () => {
     await withMcpServer(async ({ baseURL, cookie }) => {
       const { accessToken } = await runClaudeOAuthFlow(baseURL, cookie);
@@ -275,7 +299,7 @@ describe("MCP over OAuth (end-to-end)", () => {
 
       const revoke = await fetch(`${baseURL}/api/me/assistants/${consentId}/revoke`, {
         method: "POST",
-        headers: { cookie },
+        headers: { cookie, origin: baseURL },
       });
       expect(revoke.status).toBe(200);
       expect(await revoke.json()).toEqual({ id: consentId });

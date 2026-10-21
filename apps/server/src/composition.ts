@@ -2,6 +2,8 @@ import type { CleanupScheduler, GroceryService } from "@hejmly/app-grocery/serve
 import { createGroceryRoutes } from "@hejmly/app-grocery/server";
 import type { RecipeService } from "@hejmly/app-recipes/server";
 import { createRecipeRoutes } from "@hejmly/app-recipes/server";
+import type { TodoService } from "@hejmly/app-todo/server";
+import { createTodoRoutes } from "@hejmly/app-todo/server";
 import {
   type AssistantsService,
   type AuditRecorder,
@@ -13,6 +15,8 @@ import {
 } from "@hejmly/core/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { csrf } from "hono/csrf";
+import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { mountMcp } from "./mcp.ts";
@@ -39,6 +43,9 @@ export type ComposeOptions = {
   recipes: {
     service: RecipeService;
   };
+  todo: {
+    service: TodoService;
+  };
 };
 
 export const createApp = ({
@@ -52,6 +59,7 @@ export const createApp = ({
   assistants,
   grocery,
   recipes,
+  todo,
 }: ComposeOptions) =>
   new Hono()
     .use("*", logger())
@@ -68,18 +76,22 @@ export const createApp = ({
         allowedHosts,
         grocery: grocery.service,
         recipes: recipes.service,
+        todo: todo.service,
         audit,
         cleanup: grocery.cleanup,
       }),
     )
+    .use("/api/*", csrf({ origin: baseURL }))
     .use("/api/*", createRequireSession(auth))
     .use("/api/*", createIdempotency(db))
     .get("/api/me", (c) => c.json({ user: c.get("user") }))
     .route("/api/me/assistants", createAssistantsRoutes({ service: assistants.service, audit }))
     .route("/api/grocery", createGroceryRoutes(grocery))
     .route("/api/recipes", createRecipeRoutes(recipes))
+    .route("/api/todo", createTodoRoutes(todo))
     .route("/", mountStatic(staticRoot))
     .onError((err, c) => {
+      if (err instanceof HTTPException) return err.getResponse();
       if (isValidationError(err)) {
         return c.json({ kind: "invalid_input", message: "Invalid input" }, 400);
       }

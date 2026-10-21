@@ -1,7 +1,7 @@
 import type { Db } from "@hejmly/core/server";
 import { desc, eq } from "@hejmly/core/server/drizzle";
 import { users } from "@hejmly/core/server/schema";
-import { err, ok, type Result, type UserId } from "@hejmly/core/shared";
+import { err, ok, parseUserId, type Result, type UserId } from "@hejmly/core/shared";
 import { ulid } from "ulid";
 import {
   type CreateRecipeInput,
@@ -12,7 +12,13 @@ import {
   type RecipeSummary,
 } from "../shared/index.ts";
 import { recipes } from "./schema.ts";
-import { rowToRecipe, rowToSummary, serializeIngredients, serializeSteps } from "./serialize.ts";
+import {
+  type AuthorRow,
+  rowToRecipe,
+  rowToSummary,
+  serializeIngredients,
+  serializeSteps,
+} from "./serialize.ts";
 
 export type RecipeService = {
   list(): Promise<RecipeSummary[]>;
@@ -23,6 +29,11 @@ export type RecipeService = {
 };
 
 const authorColumns = { id: users.id, name: users.name, email: users.email } as const;
+
+const fetchAuthor = async (db: Db, userId: UserId): Promise<AuthorRow> => {
+  const rows = await db.select(authorColumns).from(users).where(eq(users.id, userId)).limit(1);
+  return rows[0] ?? null;
+};
 
 export const createRecipeService = (db: Db): RecipeService => ({
   async list() {
@@ -68,8 +79,7 @@ export const createRecipeService = (db: Db): RecipeService => ({
       .returning();
     const row = inserted[0];
     if (row === undefined) return err({ kind: "not_found", id });
-    const authorRows = await db.select(authorColumns).from(users).where(eq(users.id, by)).limit(1);
-    return ok(rowToRecipe(row, authorRows[0] ?? null));
+    return ok(rowToRecipe(row, await fetchAuthor(db, by)));
   },
 
   async update(id, input) {
@@ -89,12 +99,9 @@ export const createRecipeService = (db: Db): RecipeService => ({
       .returning();
     const row = updated[0];
     if (row === undefined) return err({ kind: "not_found", id });
-    const authorRows = await db
-      .select(authorColumns)
-      .from(users)
-      .where(eq(users.id, row.createdByUserId))
-      .limit(1);
-    return ok(rowToRecipe(row, authorRows[0] ?? null));
+    const author =
+      row.createdByUserId === null ? null : await fetchAuthor(db, parseUserId(row.createdByUserId));
+    return ok(rowToRecipe(row, author));
   },
 
   async remove(id) {

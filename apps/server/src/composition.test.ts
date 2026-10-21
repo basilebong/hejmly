@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { CleanupScheduler } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
+import { createTodoService } from "@hejmly/app-todo/server";
 import type { Auth, Db } from "@hejmly/core/server";
 import { createAssistantsService, createAuditRecorder } from "@hejmly/core/server";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
@@ -44,6 +45,7 @@ const appFor = (auth: Auth, db: Db, baseURL = "http://localhost:5173") =>
     assistants: { service: createAssistantsService(db) },
     grocery: groceryFor(db),
     recipes: { service: createRecipeService(db) },
+    todo: { service: createTodoService(db) },
     staticRoot: distRoot,
   });
 
@@ -103,6 +105,83 @@ describe("composition", () => {
     );
   });
 
+  describe("cross-site request forgery", () => {
+    const APP_ORIGIN = "http://localhost:5173";
+
+    const signedIn = async (
+      auth: Auth,
+      signSessionCookie: (token: string) => Promise<string>,
+    ): Promise<string> => {
+      const ctx = await auth.$context;
+      const user = await ctx.internalAdapter.createUser(
+        { name: "Basile", email: "basile@example.com" },
+        googleProvisioningSource,
+      );
+      const sessionRow = await ctx.internalAdapter.createSession(user.id);
+      return `Hejmly.session_token=${await signSessionCookie(sessionRow.token)}`;
+    };
+
+    const creates = [
+      { path: "/api/todo/projects", body: { name: "Forged" } },
+      { path: "/api/grocery/items", body: { name: "Forged" } },
+      { path: "/api/recipes", body: { title: "Forged" } },
+    ];
+
+    test("a form-style POST from another site is refused on every app's create route", async () => {
+      await withTestAuth(
+        { allowedEmails: "basile@example.com" },
+        async ({ auth, db, signSessionCookie }) => {
+          const app = appFor(auth, db);
+          const cookie = await signedIn(auth, signSessionCookie);
+          for (const { path, body } of creates) {
+            for (const forged of [
+              { origin: "https://evil.example.com" },
+              { origin: "https://sibling.localhost:5173" },
+              { "sec-fetch-site": "same-site" },
+              {},
+            ]) {
+              const res = await app.request(path, {
+                method: "POST",
+                headers: { cookie, "content-type": "text/plain", ...forged },
+                body: JSON.stringify(body),
+              });
+              expect({ path, forged, status: res.status }).toEqual({ path, forged, status: 403 });
+            }
+          }
+          expect(db.$client.query("SELECT COUNT(*) AS n FROM todo_projects").get()).toEqual({
+            n: 0,
+          });
+          expect(db.$client.query("SELECT COUNT(*) AS n FROM grocery_items").get()).toEqual({
+            n: 0,
+          });
+        },
+      );
+    });
+
+    test("the app's own requests still go through", async () => {
+      await withTestAuth(
+        { allowedEmails: "basile@example.com" },
+        async ({ auth, db, signSessionCookie }) => {
+          const app = appFor(auth, db);
+          const cookie = await signedIn(auth, signSessionCookie);
+
+          const json = await app.request("/api/todo/projects", {
+            method: "POST",
+            headers: { cookie, "content-type": "application/json", origin: APP_ORIGIN },
+            body: JSON.stringify({ name: "Garden" }),
+          });
+          expect(json.status).toBe(201);
+
+          const bodilessFromApp = await app.request("/api/todo/projects/nope", {
+            method: "DELETE",
+            headers: { cookie, origin: APP_ORIGIN, "sec-fetch-site": "same-origin" },
+          });
+          expect(bodilessFromApp.status).toBe(404);
+        },
+      );
+    });
+  });
+
   test("GET /api/me/assistants without a session returns 401", async () => {
     await withTestAuth({}, async ({ auth, db }) => {
       const app = appFor(auth, db);
@@ -133,6 +212,30 @@ describe("composition", () => {
 
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ assistants: [] });
+      },
+    );
+  });
+
+  test("/api/todo is gated by the session and mounted for signed-in users", async () => {
+    await withTestAuth(
+      { allowedEmails: "basile@example.com" },
+      async ({ auth, db, signSessionCookie }) => {
+        const app = appFor(auth, db);
+        const anonymous = await app.request("/api/todo/projects");
+        expect(anonymous.status).toBe(401);
+
+        const ctx = await auth.$context;
+        const user = await ctx.internalAdapter.createUser(
+          { name: "Basile", email: "basile@example.com" },
+          googleProvisioningSource,
+        );
+        const sessionRow = await ctx.internalAdapter.createSession(user.id);
+        const signed = await signSessionCookie(sessionRow.token);
+        const res = await app.request("/api/todo/projects", {
+          headers: { cookie: `Hejmly.session_token=${signed}` },
+        });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ projects: [] });
       },
     );
   });

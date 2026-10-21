@@ -5,7 +5,9 @@
     { "path": "./packages/core" },
     { "path": "./packages/app-grocery" },
     { "path": "./packages/app-recipes" },
+    { "path": "./packages/app-todo" },
     { "path": "./apps/server" },
-    { "path": "./apps/web" }
+    { "path": "./apps/web" },
+    { "path": "./apps/web/tsconfig.test.json" }
   ]
 }

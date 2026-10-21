@@ -1,11 +1,17 @@
-import type { AuditRecorder } from "@hejmly/core/server";
+import { type AuditRecorder, createToolAuditor } from "@hejmly/core/server";
 import type { UserId } from "@hejmly/core/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { match } from "ts-pattern";
 import * as z from "zod";
 import type { CleanupScheduler, GroceryService } from "../server/index.ts";
-import { type GroceryError, type GroceryItem, parseGroceryItemId } from "../shared/index.ts";
+import {
+  type GroceryError,
+  type GroceryItem,
+  ID_MAX_LENGTH,
+  parseGroceryItemId,
+} from "../shared/index.ts";
 
+const idInput = z.string().min(1).max(ID_MAX_LENGTH);
 export type GroceryToolDeps = {
   service: GroceryService;
   actor: UserId;
@@ -34,11 +40,6 @@ const errorText = (error: GroceryError): string =>
     .with({ kind: "already_in_state" }, (e) => `Item is already ${e.state}.`)
     .exhaustive();
 
-const errorResult = (error: GroceryError) => ({
-  content: [{ type: "text" as const, text: errorText(error) }],
-  isError: true,
-});
-
 const itemResult = (text: string, item: GroceryItem) => ({
   content: [{ type: "text" as const, text }],
   structuredContent: { item },
@@ -46,6 +47,7 @@ const itemResult = (text: string, item: GroceryItem) => ({
 
 export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): void => {
   const { service, actor, audit, cleanup } = deps;
+  const auditor = createToolAuditor({ audit, actor, app: "grocery" });
 
   server.registerTool(
     "grocery__list_items",
@@ -60,15 +62,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
         status === undefined || status === "all"
           ? all
           : all.filter((item) => item.status.kind === status);
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "grocery__list_items",
-          via: "mcp",
-          metadata: { status: status ?? "all", count: items.length },
-        }),
-      );
+      await auditor.record("grocery__list_items", { status: status ?? "all", count: items.length });
       const text =
         items.length === 0 ? "The grocery list is empty." : items.map(itemText).join("\n");
       return { content: [{ type: "text" as const, text }], structuredContent: { items } };
@@ -87,16 +81,9 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     },
     async ({ name, description }) => {
       const result = await service.create({ name, description }, actor);
-      if (result.kind === "err") return errorResult(result.error);
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "grocery__add_item",
-          via: "mcp",
-          metadata: { itemId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("grocery__add_item", result.error, errorText(result.error), {});
+      await auditor.record("grocery__add_item", { itemId: result.value.id });
       return itemResult(`Added "${result.value.name}" to the grocery list.`, result.value);
     },
   );
@@ -106,20 +93,15 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     {
       title: "Mark grocery item purchased",
       description: "Mark a grocery item as purchased.",
-      inputSchema: { itemId: z.string().min(1) },
+      inputSchema: { itemId: idInput },
     },
     async ({ itemId }) => {
       const result = await service.markPurchased(parseGroceryItemId(itemId), actor);
-      if (result.kind === "err") return errorResult(result.error);
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "grocery__mark_purchased",
-          via: "mcp",
-          metadata: { itemId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("grocery__mark_purchased", result.error, errorText(result.error), {
+          itemId,
+        });
+      await auditor.record("grocery__mark_purchased", { itemId: result.value.id });
       await safely("cleanup schedule", cleanup.schedule(result.value.id));
       return itemResult(`Marked "${result.value.name}" as purchased.`, result.value);
     },
@@ -130,20 +112,15 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     {
       title: "Mark grocery item pending",
       description: "Move a purchased grocery item back to pending.",
-      inputSchema: { itemId: z.string().min(1) },
+      inputSchema: { itemId: idInput },
     },
     async ({ itemId }) => {
       const result = await service.markPending(parseGroceryItemId(itemId));
-      if (result.kind === "err") return errorResult(result.error);
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "grocery__mark_pending",
-          via: "mcp",
-          metadata: { itemId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("grocery__mark_pending", result.error, errorText(result.error), {
+          itemId,
+        });
+      await auditor.record("grocery__mark_pending", { itemId: result.value.id });
       await safely("cleanup cancel", cleanup.cancel(result.value.id));
       return itemResult(`Moved "${result.value.name}" back to pending.`, result.value);
     },
@@ -155,23 +132,18 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
       title: "Update grocery item",
       description: "Update the name or description of a grocery item.",
       inputSchema: {
-        itemId: z.string().min(1),
+        itemId: idInput,
         name: z.string().trim().min(1).max(120).optional(),
         description: z.string().trim().max(280).nullable().optional(),
       },
     },
     async ({ itemId, name, description }) => {
       const result = await service.update(parseGroceryItemId(itemId), { name, description });
-      if (result.kind === "err") return errorResult(result.error);
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "grocery__update_item",
-          via: "mcp",
-          metadata: { itemId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("grocery__update_item", result.error, errorText(result.error), {
+          itemId,
+        });
+      await auditor.record("grocery__update_item", { itemId: result.value.id });
       return itemResult(`Updated "${result.value.name}".`, result.value);
     },
   );
@@ -181,20 +153,15 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     {
       title: "Remove grocery item",
       description: "Permanently remove an item from the grocery list.",
-      inputSchema: { itemId: z.string().min(1) },
+      inputSchema: { itemId: idInput },
     },
     async ({ itemId }) => {
       const result = await service.remove(parseGroceryItemId(itemId));
-      if (result.kind === "err") return errorResult(result.error);
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "grocery__remove_item",
-          via: "mcp",
-          metadata: { itemId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("grocery__remove_item", result.error, errorText(result.error), {
+          itemId,
+        });
+      await auditor.record("grocery__remove_item", { itemId: result.value.id });
       await safely("cleanup cancel", cleanup.cancel(result.value.id));
       return {
         content: [{ type: "text" as const, text: `Removed item ${result.value.id}.` }],

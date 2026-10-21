@@ -64,6 +64,20 @@
       "when": 1791854351323,
       "tag": "0008_confused_havok",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792512829809,
+      "tag": "0009_fantastic_tinkerer",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792519275754,
+      "tag": "0010_superb_diamondback",
+      "breakpoints": true
     }
   ]
 }

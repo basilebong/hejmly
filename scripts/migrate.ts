@@ -4,6 +4,10 @@ import { dirname, resolve } from "node:path";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { linkExistingClientsToResource } from "../packages/core/src/server/auth/backfill.ts";
 import { createDb } from "../packages/core/src/server/db/index.ts";
+import {
+  describeForeignKeyViolations,
+  foreignKeyViolations,
+} from "../packages/core/src/server/db/integrity.ts";
 import { parseEnv } from "../packages/core/src/shared/env.ts";
 
 const env = parseEnv(process.env);
@@ -14,7 +18,14 @@ if (dbPath !== ":memory:") {
 }
 
 const db = createDb({ path: dbPath });
-migrate(db, { migrationsFolder: "./drizzle" });
+try {
+  migrate(db, { migrationsFolder: "./drizzle" });
+} catch (error) {
+  const violations = foreignKeyViolations(db);
+  if (violations.length === 0) throw error;
+  console.error(describeForeignKeyViolations(dbPath, violations));
+  process.exit(1);
+}
 
 console.info(`migrate: applied migrations to ${dbPath}`);
 

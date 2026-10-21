@@ -2,6 +2,8 @@ import type { CleanupScheduler, GroceryService } from "@hejmly/app-grocery/serve
 import { registerGroceryTools } from "@hejmly/app-grocery/tools";
 import type { RecipeService } from "@hejmly/app-recipes/server";
 import { registerRecipeTools } from "@hejmly/app-recipes/tools";
+import type { TodoService } from "@hejmly/app-todo/server";
+import { registerTodoTools } from "@hejmly/app-todo/tools";
 import type { AuditRecorder } from "@hejmly/core/server";
 import {
   createAuthServerMetadataHandler,
@@ -21,6 +23,7 @@ export type McpDeps = {
   allowedHosts: readonly string[];
   grocery: GroceryService;
   recipes: RecipeService;
+  todo: TodoService;
   audit: AuditRecorder;
   cleanup: CleanupScheduler;
 };
@@ -32,6 +35,7 @@ export const mountMcp = ({
   allowedHosts,
   grocery,
   recipes,
+  todo,
   audit,
   cleanup,
 }: McpDeps) => {
@@ -40,6 +44,7 @@ export const mountMcp = ({
     runMcpRequest((server) => {
       registerGroceryTools(server, { service: grocery, actor, audit, cleanup });
       registerRecipeTools(server, { service: recipes, actor, audit });
+      registerTodoTools(server, { service: todo, actor, audit });
     }, req),
   );
 

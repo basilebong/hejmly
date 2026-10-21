@@ -198,6 +198,131 @@ describe("migration 0008 against a database that ran Better Auth 1.7.0-1.7.2", (
   });
 });
 
+type ColumnRow = {
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+};
+
+const upgradedWithHouseholdData = (): Database =>
+  upgradeFrom("0010", (db) => {
+    db.exec(
+      `INSERT INTO users (id,name,email,email_verified,created_at,updated_at) VALUES ('u1','B','b@e.com',1,1750000000000,1750000000000), ('u2','A','a@e.com',1,1750000000000,1750000000000)`,
+    );
+    db.exec(
+      `INSERT INTO grocery_items (id,name,description,status_json,added_by_user_id,created_at,updated_at,purchased_at) VALUES ('g1','Milk','Whole','{"kind":"pending"}','u1',1750000000001,1750000000002,NULL), ('g2','Eggs',NULL,'{"kind":"purchased","purchasedAt":1750000000009,"purchasedBy":"u1"}','u2',1750000000003,1750000000004,1750000000009)`,
+    );
+    db.exec(
+      `INSERT INTO recipes (id,title,description,image,category,minutes,serves,ingredients_json,steps_json,created_by_user_id,created_at,updated_at) VALUES ('r1','Carbonara','Roman','data:image/png;base64,AA==','Main',25,2,'[]','[]','u1',1750000000005,1750000000006)`,
+    );
+  });
+
+describe("migration 0010 against a household with grocery items and recipes", () => {
+  test("keeps every grocery item and recipe column for column", () => {
+    const db = upgradedWithHouseholdData();
+    expect(rows(db, "SELECT * FROM grocery_items ORDER BY id")).toEqual([
+      {
+        id: "g1",
+        name: "Milk",
+        description: "Whole",
+        status_json: '{"kind":"pending"}',
+        added_by_user_id: "u1",
+        created_at: 1750000000001,
+        updated_at: 1750000000002,
+        purchased_at: null,
+      },
+      {
+        id: "g2",
+        name: "Eggs",
+        description: null,
+        status_json: '{"kind":"purchased","purchasedAt":1750000000009,"purchasedBy":"u1"}',
+        added_by_user_id: "u2",
+        created_at: 1750000000003,
+        updated_at: 1750000000004,
+        purchased_at: 1750000000009,
+      },
+    ]);
+    expect(rows(db, "SELECT * FROM recipes")).toEqual([
+      {
+        id: "r1",
+        title: "Carbonara",
+        description: "Roman",
+        image: "data:image/png;base64,AA==",
+        category: "Main",
+        minutes: 25,
+        serves: 2,
+        ingredients_json: "[]",
+        steps_json: "[]",
+        created_by_user_id: "u1",
+        created_at: 1750000000005,
+        updated_at: 1750000000006,
+      },
+    ]);
+  });
+
+  test("removing a member keeps what they added and clears the author", () => {
+    const db = upgradedWithHouseholdData();
+    db.exec("DELETE FROM users WHERE id = 'u1'");
+    expect(rows(db, "SELECT id, added_by_user_id FROM grocery_items ORDER BY id")).toEqual([
+      { id: "g1", added_by_user_id: null },
+      { id: "g2", added_by_user_id: "u2" },
+    ]);
+    expect(rows(db, "SELECT id, created_by_user_id FROM recipes")).toEqual([
+      { id: "r1", created_by_user_id: null },
+    ]);
+  });
+
+  test("leaves no rebuild table behind and passes a foreign key check", () => {
+    const db = upgradedWithHouseholdData();
+    expect(rows(db, "SELECT name FROM sqlite_master WHERE name LIKE '__new%'")).toEqual([]);
+    expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
+  });
+
+  test("produces the same schema as a database built from scratch", () => {
+    expect(schemaOf(upgradedWithHouseholdData())).toBe(schemaOf(migratedThrough("0010")));
+  });
+
+  test("changes nothing but the author column's nullability and delete rule", () => {
+    const before = new Database(":memory:");
+    for (const f of migrationsBefore("0010")) applyMigration(before, f);
+    const after = migratedThrough("0010");
+    const shape = (db: Database, table: string) => ({
+      columns: db
+        .query<ColumnRow, []>(
+          `SELECT name, type, "notnull", dflt_value, pk FROM pragma_table_info('${table}') ORDER BY name`,
+        )
+        .all(),
+      indexes: rows(
+        db,
+        `SELECT il.name, il."unique", group_concat(ii.name) AS cols FROM pragma_index_list('${table}') il, pragma_index_info(il.name) ii GROUP BY il.name ORDER BY il.name`,
+      ),
+      foreignKeys: rows(
+        db,
+        `SELECT "from", "table", "to", on_delete FROM pragma_foreign_key_list('${table}')`,
+      ),
+    });
+    for (const [table, author] of [
+      ["grocery_items", "added_by_user_id"],
+      ["recipes", "created_by_user_id"],
+    ] as const) {
+      const was = shape(before, table);
+      const now = shape(after, table);
+      expect(now.indexes).toEqual(was.indexes);
+      expect(now.columns).toEqual(
+        was.columns.map((c) => (c.name === author ? { ...c, notnull: 0 } : c)),
+      );
+      expect(was.foreignKeys).toEqual([
+        { from: author, table: "users", to: "id", on_delete: "CASCADE" },
+      ]);
+      expect(now.foreignKeys).toEqual([
+        { from: author, table: "users", to: "id", on_delete: "SET NULL" },
+      ]);
+    }
+  });
+});
+
 describe("the fully migrated schema", () => {
   test("keeps UNIQUE(provider_id, account_id) on accounts", () => {
     const db = new Database(":memory:");

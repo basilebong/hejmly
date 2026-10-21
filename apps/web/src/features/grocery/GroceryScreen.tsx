@@ -17,7 +17,6 @@ import {
   ListSkeleton,
   TopBar,
 } from "@hejmly/app-grocery/ui";
-import { parseUserId } from "@hejmly/core/shared";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
@@ -27,23 +26,13 @@ import { match } from "ts-pattern";
 import { BottomNav } from "@/components/BottomNav";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
-import { useSession } from "@/lib/auth-client";
 import { createItem, deleteItem, fetchItems, togglePurchased, updateItem } from "@/lib/grocery-api";
+import { useSessionAuthor } from "@/lib/session-author";
 
 const ITEMS_QUERY_KEY = ["grocery", "items"] as const;
 const TEMP_ID_PREFIX = "tmp_";
 
 const isTempId = (id: GroceryItemId): boolean => id.startsWith(TEMP_ID_PREFIX);
-
-const useIdentity = (): GroceryAuthor => {
-  const session = useSession();
-  const user = session.data?.user;
-  if (user === undefined) return { kind: "unknown", name: "You", initial: "·" };
-  const trimmed = user.name?.trim();
-  const name = trimmed !== undefined && trimmed.length > 0 ? trimmed : (user.email ?? "You");
-  const initial = name.charAt(0).toUpperCase() || "·";
-  return { kind: "user", id: parseUserId(user.id), name, initial };
-};
 
 type DrawerState =
   | { kind: "none" }
@@ -56,7 +45,7 @@ const DRAWER_NONE: DrawerState = { kind: "none" };
 export const GroceryScreen = (): ReactElement => {
   const qc = useQueryClient();
   const online = useOnlineStatus();
-  const identity = useIdentity();
+  const identity: GroceryAuthor = useSessionAuthor();
   const [drawer, setDrawer] = useState<DrawerState>(DRAWER_NONE);
   const [pending, setPending] = useState<ReadonlyMap<GroceryItemId, ItemSyncState>>(
     () => new Map(),

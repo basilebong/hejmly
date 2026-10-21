@@ -6,13 +6,13 @@
   <img src="docs/thumbnail.png" alt="Hejmly recipes screen" width="520">
 </p>
 
-<p align="center">Your family's groceries and recipes in one private app you own, and that Claude can manage for you.</p>
+<p align="center">Your family's groceries, recipes and to-dos in one private app you own, and that Claude can manage for you.</p>
 
-- **Groceries and recipes** for the whole household, synced across everyone's phones
+- **Groceries, recipes and to-do projects** for the whole household, synced across everyone's phones
 - **Installs like a native app** and keeps working offline (PWA)
-- **Claude built in**: a secure MCP server lets you manage your lists and recipes by chat
+- **Claude built in**: a secure MCP server lets you manage your lists, recipes and tasks by chat
 - **Private by design**: runs on your own server, sign-in limited to your family
-- **One login** for a growing set of small family apps (grocery and recipes today)
+- **One login** for a growing set of small family apps (grocery, recipes and todo today)
 
 Under the hood: a single Bun process in one Docker image, deployed behind a
 reverse proxy like Caddy. You own the deployment and the data.
@@ -62,7 +62,8 @@ onehouse/
 │   │       ├── server/              # Drizzle schema, Hono routes, services
 │   │       ├── tools/               # MCP tool definitions
 │   │       └── ui/                  # React components reused across entry points
-│   └── app-recipes/                 # Recipes; same four-subpath structure
+│   ├── app-recipes/                 # Recipes; same four-subpath structure
+│   └── app-todo/                    # To-do projects and their tasks; same structure
 ├── drizzle/                         # Generated migrations (committed)
 ├── data/                            # SQLite + WAL (Docker volume)
 ├── scripts/                         # migrate.ts, backup, etc.
@@ -211,6 +212,10 @@ Grocery tools: `grocery__list_items`, `grocery__add_item`, `grocery__mark_purcha
 
 Recipes tools: `recipes__list`, `recipes__add`, `recipes__get`, `recipes__update`,
 `recipes__remove`.
+
+Todo tools: `todo__list_projects`, `todo__add_project`, `todo__update_project`,
+`todo__remove_project`, `todo__list_tasks`, `todo__add_task`, `todo__complete_task`,
+`todo__reopen_task`, `todo__update_task`, `todo__remove_task`.
 
 ### Test locally with the MCP Inspector
 

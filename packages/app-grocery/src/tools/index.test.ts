@@ -6,6 +6,7 @@ import { parseUserId, type UserId } from "@hejmly/core/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import * as v from "valibot";
 import type { CleanupScheduler } from "../server/index.ts";
 import { createGroceryService } from "../server/index.ts";
 import { type GroceryItemId, parseGroceryItemId } from "../shared/index.ts";
@@ -59,6 +60,18 @@ const connect = async (
   return client;
 };
 
+const AuditRowSchema = v.object({ action: v.string(), metadata_json: v.nullable(v.string()) });
+
+const auditEntries = (db: Db): { action: string; metadata: unknown }[] =>
+  db.$client
+    .query("SELECT action, metadata_json FROM audit_log ORDER BY created_at")
+    .all()
+    .map((raw) => {
+      const row = v.parse(AuditRowSchema, raw);
+      const metadata: unknown = row.metadata_json === null ? null : JSON.parse(row.metadata_json);
+      return { action: row.action, metadata };
+    });
+
 const auditActions = (db: Db): string[] =>
   db.$client
     .query("SELECT action FROM audit_log ORDER BY created_at")
@@ -87,6 +100,18 @@ const itemIdOf = (result: unknown): string => {
 };
 
 describe("grocery MCP tools", () => {
+  test("an over-long item id is refused before the handler runs, so nothing is audited", async () => {
+    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
+      const client = await connect(db, await seedUser(auth));
+      const result = await client.callTool({
+        name: "grocery__remove_item",
+        arguments: { itemId: "x".repeat(65) },
+      });
+      expect(result.isError).toBe(true);
+      expect(auditEntries(db)).toEqual([]);
+    });
+  });
+
   test("lists the registered tools", async () => {
     await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
       const client = await connect(db, await seedUser(auth));
@@ -189,6 +214,39 @@ describe("grocery MCP tools", () => {
         arguments: { itemId: "does-not-exist" },
       });
       expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error: { kind: "not_found", id: "does-not-exist" },
+      });
+      expect(auditEntries(db)).toEqual([
+        {
+          action: "grocery__mark_purchased",
+          metadata: { itemId: "does-not-exist", error: "not_found" },
+        },
+      ]);
+    });
+  });
+
+  test("marking an already-purchased item again is a structured, audited error", async () => {
+    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
+      const client = await connect(db, await seedUser(auth));
+      const added = await client.callTool({
+        name: "grocery__add_item",
+        arguments: { name: "Milk" },
+      });
+      const itemId = itemIdOf(added);
+      await client.callTool({ name: "grocery__mark_purchased", arguments: { itemId } });
+      const again = await client.callTool({
+        name: "grocery__mark_purchased",
+        arguments: { itemId },
+      });
+      expect(again.isError).toBe(true);
+      expect(again.structuredContent).toEqual({
+        error: { kind: "already_in_state", state: "purchased" },
+      });
+      expect(auditEntries(db).at(-1)).toEqual({
+        action: "grocery__mark_purchased",
+        metadata: { itemId, error: "already_in_state" },
+      });
     });
   });
 

@@ -14,10 +14,12 @@
     }
   },
   "include": ["src/**/*", "e2e/**/*"],
+  "exclude": ["src/**/*.test.ts"],
   "references": [
     { "path": "./tsconfig.node.json" },
     { "path": "../../packages/core" },
     { "path": "../../packages/app-grocery" },
-    { "path": "../../packages/app-recipes" }
+    { "path": "../../packages/app-recipes" },
+    { "path": "../../packages/app-todo" }
   ]
 }
