@@ -68,7 +68,7 @@ export const toCook = (
   return { name: displayName, initial: initialOf(displayName) };
 };
 
-type AuthorRow = { id: string; name: string | null; email: string | null } | null;
+export type AuthorRow = { id: string; name: string | null; email: string | null } | null;
 
 export const rowToRecipe = (row: RecipeRow, author: AuthorRow): Recipe => ({
   id: parseRecipeId(row.id),

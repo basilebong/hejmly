@@ -17,6 +17,11 @@ export { linkExistingClientsToResource, type ResourceBackfill } from "./auth/bac
 export { checkEmailAllowed } from "./auth/check-email-allowed.ts";
 export { type Auth, type CreateAuthOptions, createAuth } from "./auth/index.ts";
 export { createDb, type Db } from "./db/index.ts";
+export {
+  describeForeignKeyViolations,
+  type ForeignKeyViolation,
+  foreignKeyViolations,
+} from "./db/integrity.ts";
 export { createIdempotency } from "./idempotency/middleware.ts";
 export {
   type AuthedMcpHandler,

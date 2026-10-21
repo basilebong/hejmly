@@ -1,7 +1,7 @@
 import type { Db } from "@hejmly/core/server";
 import { desc, eq } from "@hejmly/core/server/drizzle";
 import { users } from "@hejmly/core/server/schema";
-import { err, ok, type Result, type UserId } from "@hejmly/core/shared";
+import { err, ok, parseUserId, type Result, type UserId } from "@hejmly/core/shared";
 import { ulid } from "ulid";
 import {
   type CreateRecipeInput,
@@ -12,7 +12,13 @@ import {
   type RecipeSummary,
 } from "../shared/index.ts";
 import { recipes } from "./schema.ts";
-import { rowToRecipe, rowToSummary, serializeIngredients, serializeSteps } from "./serialize.ts";
+import {
+  type AuthorRow,
+  rowToRecipe,
+  rowToSummary,
+  serializeIngredients,
+  serializeSteps,
+} from "./serialize.ts";
 
 export type RecipeService = {
   list(): Promise<RecipeSummary[]>;
@@ -24,10 +30,7 @@ export type RecipeService = {
 
 const authorColumns = { id: users.id, name: users.name, email: users.email } as const;
 
-type AuthorRow = { id: string; name: string | null; email: string | null } | null;
-
-const fetchAuthor = async (db: Db, userId: string | null): Promise<AuthorRow> => {
-  if (userId === null) return null;
+const fetchAuthor = async (db: Db, userId: UserId): Promise<AuthorRow> => {
   const rows = await db.select(authorColumns).from(users).where(eq(users.id, userId)).limit(1);
   return rows[0] ?? null;
 };
@@ -96,7 +99,9 @@ export const createRecipeService = (db: Db): RecipeService => ({
       .returning();
     const row = updated[0];
     if (row === undefined) return err({ kind: "not_found", id });
-    return ok(rowToRecipe(row, await fetchAuthor(db, row.createdByUserId)));
+    const author =
+      row.createdByUserId === null ? null : await fetchAuthor(db, parseUserId(row.createdByUserId));
+    return ok(rowToRecipe(row, author));
   },
 
   async remove(id) {

@@ -198,6 +198,14 @@ describe("migration 0008 against a database that ran Better Auth 1.7.0-1.7.2", (
   });
 });
 
+type ColumnRow = {
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+};
+
 const upgradedWithHouseholdData = (): Database =>
   upgradeFrom("0010", (db) => {
     db.exec(
@@ -274,6 +282,44 @@ describe("migration 0010 against a household with grocery items and recipes", ()
 
   test("produces the same schema as a database built from scratch", () => {
     expect(schemaOf(upgradedWithHouseholdData())).toBe(schemaOf(migratedThrough("0010")));
+  });
+
+  test("changes nothing but the author column's nullability and delete rule", () => {
+    const before = new Database(":memory:");
+    for (const f of migrationsBefore("0010")) applyMigration(before, f);
+    const after = migratedThrough("0010");
+    const shape = (db: Database, table: string) => ({
+      columns: db
+        .query<ColumnRow, []>(
+          `SELECT name, type, "notnull", dflt_value, pk FROM pragma_table_info('${table}') ORDER BY name`,
+        )
+        .all(),
+      indexes: rows(
+        db,
+        `SELECT il.name, il."unique", group_concat(ii.name) AS cols FROM pragma_index_list('${table}') il, pragma_index_info(il.name) ii GROUP BY il.name ORDER BY il.name`,
+      ),
+      foreignKeys: rows(
+        db,
+        `SELECT "from", "table", "to", on_delete FROM pragma_foreign_key_list('${table}')`,
+      ),
+    });
+    for (const [table, author] of [
+      ["grocery_items", "added_by_user_id"],
+      ["recipes", "created_by_user_id"],
+    ] as const) {
+      const was = shape(before, table);
+      const now = shape(after, table);
+      expect(now.indexes).toEqual(was.indexes);
+      expect(now.columns).toEqual(
+        was.columns.map((c) => (c.name === author ? { ...c, notnull: 0 } : c)),
+      );
+      expect(was.foreignKeys).toEqual([
+        { from: author, table: "users", to: "id", on_delete: "CASCADE" },
+      ]);
+      expect(now.foreignKeys).toEqual([
+        { from: author, table: "users", to: "id", on_delete: "SET NULL" },
+      ]);
+    }
   });
 });
 
