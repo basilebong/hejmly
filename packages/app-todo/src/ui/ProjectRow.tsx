@@ -4,6 +4,7 @@ import type { Project, SyncState } from "../shared/index.ts";
 import { cn } from "./cn.ts";
 import { paletteFor } from "./colors.ts";
 import { ProgressBar } from "./ProgressBar.tsx";
+import { syncFlags } from "./sync.ts";
 
 type ProjectRowProps = {
   project: Project;
@@ -18,8 +19,7 @@ export const ProjectRow = ({
   onRetry,
   onDiscard,
 }: ProjectRowProps): ReactElement => {
-  const saving = syncState === "queued";
-  const failed = syncState === "error";
+  const { queued: saving, failed } = syncFlags(syncState);
   const palette = paletteFor(project.id);
   const { open, done } = project.taskCounts;
   const total = open + done;

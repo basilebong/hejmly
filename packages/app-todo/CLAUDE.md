@@ -39,13 +39,20 @@ Exports FOUR subpaths (mirrors `app-grocery`):
   web `queryFn`s merge server data with cached local rows (`mergeServerRows`)
   and hide rows with a delete in flight, so refetches never drop a pending
   create or resurrect a pending delete. A local row's state comes from the
-  mutation cache (`localRowStates`), not component state; a local row with no
-  live attempt is retryable. Retry reuses the same local id, which is also the
-  `Idempotency-Key`, and `settleLocalRow` de-duplicates a replayed create.
-- In `apps/web`, every project-screen mutation is keyed under
-  `["todo", "project", id]`; `onSettled` refetches the detail only when it is
-  the last one in flight, and rollbacks restore only what that mutation
-  changed.
+  mutation cache (`localRowStates`), not component state, as a
+  `{ kind: "synced" | "queued" | "error" }` union; a local row with no live
+  attempt (e.g. after a reload) is retryable. Retry reuses the same local id,
+  which is also the `Idempotency-Key`, and `settleLocalRow` de-duplicates a
+  replayed create. The persisted query cache is dropped on every deploy (the
+  buster is the build time), so unsynced failed rows do not survive a deploy.
+- All web query/mutation options live in `apps/web/src/features/todo/cache.ts`
+  (tested in `cache.test.ts` against a real `QueryClient`). Project-screen
+  mutations are keyed under `["todo", "project", id]`. Refreshes after a
+  mutation are scheduled by `refreshAfterSettle`, never awaited in `onSettled`:
+  TanStack only leaves "pending" after `onSettled` resolves, so refetching
+  inside it would re-hide a row a failed delete just restored and would let
+  concurrent settles each skip the refetch. Rollbacks restore only the fields
+  that mutation changed.
 - MCP failures return `structuredContent: { error }` and are audited with the
   error kind, like successes.
 - Migrations: `bun run db:generate`, never hand-written SQL.

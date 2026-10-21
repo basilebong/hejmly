@@ -95,8 +95,8 @@ describe("localRowStates", () => {
       attempt("tmp_b", "pending", 1),
       attempt("tmp_b", "error", 2),
     ]);
-    expect(states.get("tmp_a")).toBe("queued");
-    expect(states.get("tmp_b")).toBe("error");
+    expect(states.get("tmp_a")).toEqual({ kind: "queued" });
+    expect(states.get("tmp_b")).toEqual({ kind: "error" });
   });
 
   test("a successful latest attempt leaves no state behind", () => {
@@ -110,17 +110,17 @@ describe("localRowStates", () => {
 });
 
 describe("syncStateOf", () => {
-  const states = new Map([["tmp_a", "queued" as const]]);
+  const states = new Map([["tmp_a", { kind: "queued" } as const]]);
 
   test("server rows are synced", () => {
-    expect(syncStateOf("s1", states)).toBe("synced");
+    expect(syncStateOf("s1", states)).toEqual({ kind: "synced" });
   });
 
   test("local rows report their attempt state", () => {
-    expect(syncStateOf("tmp_a", states)).toBe("queued");
+    expect(syncStateOf("tmp_a", states)).toEqual({ kind: "queued" });
   });
 
   test("a local row with no live attempt (e.g. after a reload) is retryable", () => {
-    expect(syncStateOf("tmp_z", states)).toBe("error");
+    expect(syncStateOf("tmp_z", states)).toEqual({ kind: "error" });
   });
 });

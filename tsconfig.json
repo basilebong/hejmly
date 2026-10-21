@@ -7,6 +7,7 @@
     { "path": "./packages/app-recipes" },
     { "path": "./packages/app-todo" },
     { "path": "./apps/server" },
-    { "path": "./apps/web" }
+    { "path": "./apps/web" },
+    { "path": "./apps/web/tsconfig.test.json" }
   ]
 }

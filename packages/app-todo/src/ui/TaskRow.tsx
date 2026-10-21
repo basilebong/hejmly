@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import type { SyncState, Task } from "../shared/index.ts";
 import { Avatar } from "./Avatar.tsx";
 import { cn } from "./cn.ts";
+import { syncFlags } from "./sync.ts";
 import { TaskActionsMenu } from "./TaskActionsMenu.tsx";
 
 export type TaskRowHandlers = {
@@ -28,8 +29,7 @@ export const TaskRow = ({
   onRemove,
 }: TaskRowProps): ReactElement => {
   const done = task.status.kind === "done";
-  const queued = syncState === "queued";
-  const error = syncState === "error";
+  const { queued, failed: error } = syncFlags(syncState);
 
   const titleClass = done
     ? "text-slate-400 line-through decoration-slate-300"

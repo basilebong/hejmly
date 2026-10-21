@@ -2,12 +2,9 @@ import {
   type CreateProjectInput,
   isLocalId,
   localIdSeed,
-  mergeServerRows,
   type Project,
   type ProjectId,
-  ProjectIdSchema,
   parseProjectId,
-  settleLocalRow,
   syncStateOf,
 } from "@hejmly/app-todo/shared";
 import {
@@ -19,68 +16,23 @@ import {
   ProjectsTopBar,
 } from "@hejmly/app-todo/ui";
 import { CheckSquareIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactElement, useState } from "react";
-import { toast } from "sonner";
 
 import { BottomNav } from "@/components/BottomNav";
-import { useSessionAuthor } from "@/lib/session-author";
-import { createProject, fetchProjects } from "@/lib/todo-api";
+import { createProjectMutation, projectsQuery } from "./cache.ts";
+import { useTodoCacheEnv } from "./env.ts";
 import { FormDrawer } from "./FormDrawer.tsx";
-import { CREATE_PROJECT_KEY, DELETE_PROJECT_KEY, PROJECTS_QUERY_KEY } from "./keys.ts";
-import { pendingIds, useLocalRowStates } from "./mutation-state.ts";
-
-type CreateVariables = { input: CreateProjectInput; tempId: ProjectId };
+import { CREATE_PROJECT_KEY, PROJECTS_QUERY_KEY } from "./keys.ts";
+import { useLocalRowStates } from "./mutation-state.ts";
 
 export const ProjectsScreen = (): ReactElement => {
-  const qc = useQueryClient();
-  const identity = useSessionAuthor();
+  const env = useTodoCacheEnv();
   const [adding, setAdding] = useState(false);
   const localStates = useLocalRowStates(CREATE_PROJECT_KEY);
-
-  const projects = useQuery({
-    queryKey: PROJECTS_QUERY_KEY,
-    queryFn: async () =>
-      mergeServerRows(await fetchProjects(), qc.getQueryData<Project[]>(PROJECTS_QUERY_KEY), {
-        localAt: "start",
-        hidden: pendingIds(qc, DELETE_PROJECT_KEY, ProjectIdSchema),
-      }),
-    refetchInterval: 30_000,
-  });
-
-  const create = useMutation({
-    mutationKey: CREATE_PROJECT_KEY,
-    mutationFn: ({ input, tempId }: CreateVariables) => createProject(input, tempId),
-    onMutate: async ({ input, tempId }) => {
-      await qc.cancelQueries({ queryKey: PROJECTS_QUERY_KEY });
-      const now = Date.now();
-      const optimistic: Project = {
-        id: tempId,
-        name: input.name,
-        description: input.description ?? null,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: identity,
-        taskCounts: { open: 0, done: 0 },
-      };
-      qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) =>
-        current.some((p) => p.id === tempId)
-          ? current.map((p) => (p.id === tempId ? optimistic : p))
-          : [optimistic, ...current],
-      );
-    },
-    onError: () => {
-      if (!navigator.onLine) return;
-      toast.error("Could not create project — tap retry");
-    },
-    onSuccess: (saved, { tempId }) => {
-      qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) =>
-        settleLocalRow(current, tempId, saved, "start"),
-      );
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY }),
-  });
+  const projects = useQuery(projectsQuery(env));
+  const create = useMutation(createProjectMutation(env));
 
   const handleCreate = (input: CreateProjectInput): void => {
     create.mutate({ input, tempId: parseProjectId(localIdSeed()) });
@@ -96,7 +48,7 @@ export const ProjectsScreen = (): ReactElement => {
   };
 
   const handleDiscard = (id: ProjectId): void => {
-    qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) =>
+    env.qc.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (current = []) =>
       current.filter((p) => p.id !== id),
     );
   };

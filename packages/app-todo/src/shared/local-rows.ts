@@ -4,9 +4,13 @@ export const isLocalId = (id: string): boolean => id.startsWith(LOCAL_ID_PREFIX)
 
 export const localIdSeed = (): string => `${LOCAL_ID_PREFIX}${crypto.randomUUID()}`;
 
-export type SyncState = "synced" | "queued" | "error";
+export type SyncState = { kind: "synced" } | { kind: "queued" } | { kind: "error" };
 
-export type LocalRowState = Exclude<SyncState, "synced">;
+export type LocalRowState = Exclude<SyncState, { kind: "synced" }>;
+
+const SYNCED: SyncState = { kind: "synced" };
+const QUEUED: LocalRowState = { kind: "queued" };
+const FAILED: LocalRowState = { kind: "error" };
 
 export type LocalCreateAttempt = {
   localId: string | null;
@@ -52,11 +56,11 @@ export const localRowStates = (
   }
   const states = new Map<string, LocalRowState>();
   for (const [id, a] of latest) {
-    if (a.status === "error") states.set(id, "error");
-    else if (a.status !== "success") states.set(id, "queued");
+    if (a.status === "error") states.set(id, FAILED);
+    else if (a.status !== "success") states.set(id, QUEUED);
   }
   return states;
 };
 
 export const syncStateOf = (id: string, states: ReadonlyMap<string, LocalRowState>): SyncState =>
-  isLocalId(id) ? (states.get(id) ?? "error") : "synced";
+  isLocalId(id) ? (states.get(id) ?? FAILED) : SYNCED;
