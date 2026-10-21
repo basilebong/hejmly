@@ -299,7 +299,7 @@ describe("MCP over OAuth (end-to-end)", () => {
 
       const revoke = await fetch(`${baseURL}/api/me/assistants/${consentId}/revoke`, {
         method: "POST",
-        headers: { cookie },
+        headers: { cookie, origin: baseURL },
       });
       expect(revoke.status).toBe(200);
       expect(await revoke.json()).toEqual({ id: consentId });

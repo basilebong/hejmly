@@ -15,6 +15,8 @@ import {
 } from "@hejmly/core/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { csrf } from "hono/csrf";
+import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { mountMcp } from "./mcp.ts";
@@ -79,6 +81,7 @@ export const createApp = ({
         cleanup: grocery.cleanup,
       }),
     )
+    .use("/api/*", csrf({ origin: baseURL }))
     .use("/api/*", createRequireSession(auth))
     .use("/api/*", createIdempotency(db))
     .get("/api/me", (c) => c.json({ user: c.get("user") }))
@@ -88,6 +91,7 @@ export const createApp = ({
     .route("/api/todo", createTodoRoutes(todo))
     .route("/", mountStatic(staticRoot))
     .onError((err, c) => {
+      if (err instanceof HTTPException) return err.getResponse();
       if (isValidationError(err)) {
         return c.json({ kind: "invalid_input", message: "Invalid input" }, 400);
       }
