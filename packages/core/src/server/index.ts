@@ -11,6 +11,7 @@ export {
   type AuditVia,
   createAuditRecorder,
 } from "./audit/recorder.ts";
+export { createToolAuditor, type ToolAuditor, type ToolFailure } from "./audit/tool-auditor.ts";
 export { isAllowedEmail, parseAllowedEmails } from "./auth/allowlist.ts";
 export { linkExistingClientsToResource, type ResourceBackfill } from "./auth/backfill.ts";
 export { checkEmailAllowed } from "./auth/check-email-allowed.ts";

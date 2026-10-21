@@ -1,4 +1,4 @@
-import type { AuditRecorder } from "@hejmly/core/server";
+import { type AuditRecorder, createToolAuditor } from "@hejmly/core/server";
 import type { UserId } from "@hejmly/core/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { match } from "ts-pattern";
@@ -19,14 +19,6 @@ export type RecipeToolDeps = {
   service: RecipeService;
   actor: UserId;
   audit: AuditRecorder;
-};
-
-const safely = async (label: string, p: Promise<void>): Promise<void> => {
-  try {
-    await p;
-  } catch (e) {
-    console.error(`recipes ${label} failed`, e);
-  }
 };
 
 const summaryText = (recipe: RecipeSummary): string =>
@@ -75,23 +67,7 @@ const stepShape = z.object({
 
 export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): void => {
   const { service, actor, audit } = deps;
-
-  const failure = async (action: string, error: RecipeError, metadata: Record<string, unknown>) => {
-    await safely(
-      "audit",
-      audit.record({
-        userId: actor,
-        action,
-        via: "mcp",
-        metadata: { ...metadata, error: error.kind },
-      }),
-    );
-    return {
-      content: [{ type: "text" as const, text: errorText(error) }],
-      structuredContent: { error },
-      isError: true,
-    };
-  };
+  const auditor = createToolAuditor({ audit, actor, app: "recipes" });
 
   server.registerTool(
     "recipes__list",
@@ -103,15 +79,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     async ({ category }) => {
       const all = await service.list();
       const recipes = category === undefined ? all : all.filter((r) => r.category === category);
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "recipes__list",
-          via: "mcp",
-          metadata: { category: category ?? "all", count: recipes.length },
-        }),
-      );
+      await auditor.record("recipes__list", { category: category ?? "all", count: recipes.length });
       const text = recipes.length === 0 ? "No recipes yet." : recipes.map(summaryText).join("\n");
       return { content: [{ type: "text" as const, text }], structuredContent: { recipes } };
     },
@@ -126,16 +94,9 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     },
     async ({ recipeId }) => {
       const result = await service.get(parseRecipeId(recipeId));
-      if (result.kind === "err") return failure("recipes__get", result.error, { recipeId });
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "recipes__get",
-          via: "mcp",
-          metadata: { recipeId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("recipes__get", result.error, errorText(result.error), { recipeId });
+      await auditor.record("recipes__get", { recipeId: result.value.id });
       return {
         content: [{ type: "text" as const, text: recipeText(result.value) }],
         structuredContent: { recipe: result.value },
@@ -179,16 +140,9 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
         })),
       };
       const result = await service.create(input, actor);
-      if (result.kind === "err") return failure("recipes__add", result.error, { title });
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "recipes__add",
-          via: "mcp",
-          metadata: { recipeId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("recipes__add", result.error, errorText(result.error), {});
+      await auditor.record("recipes__add", { recipeId: result.value.id });
       return {
         content: [{ type: "text" as const, text: `Added "${result.value.title}".` }],
         structuredContent: { recipe: result.value },
@@ -216,7 +170,10 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     async ({ recipeId, title, description, category, minutes, serves, ingredients, steps }) => {
       const id = parseRecipeId(recipeId);
       const existing = await service.get(id);
-      if (existing.kind === "err") return failure("recipes__update", existing.error, { recipeId });
+      if (existing.kind === "err")
+        return auditor.failure("recipes__update", existing.error, errorText(existing.error), {
+          recipeId,
+        });
       const input: CreateRecipeInput = {
         title,
         description: description ?? "",
@@ -238,16 +195,11 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
         })),
       };
       const result = await service.update(id, input);
-      if (result.kind === "err") return failure("recipes__update", result.error, { recipeId });
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "recipes__update",
-          via: "mcp",
-          metadata: { recipeId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("recipes__update", result.error, errorText(result.error), {
+          recipeId,
+        });
+      await auditor.record("recipes__update", { recipeId: result.value.id });
       return {
         content: [{ type: "text" as const, text: `Updated "${result.value.title}".` }],
         structuredContent: { recipe: result.value },
@@ -264,16 +216,11 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     },
     async ({ recipeId }) => {
       const result = await service.remove(parseRecipeId(recipeId));
-      if (result.kind === "err") return failure("recipes__remove", result.error, { recipeId });
-      await safely(
-        "audit",
-        audit.record({
-          userId: actor,
-          action: "recipes__remove",
-          via: "mcp",
-          metadata: { recipeId: result.value.id },
-        }),
-      );
+      if (result.kind === "err")
+        return auditor.failure("recipes__remove", result.error, errorText(result.error), {
+          recipeId,
+        });
+      await auditor.record("recipes__remove", { recipeId: result.value.id });
       return {
         content: [{ type: "text" as const, text: `Removed recipe ${result.value.id}.` }],
         structuredContent: { id: result.value.id },
