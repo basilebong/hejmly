@@ -5,6 +5,7 @@ import { match } from "ts-pattern";
 import * as z from "zod";
 import type { TodoService } from "../server/index.ts";
 import {
+  ID_MAX_LENGTH,
   PROJECT_DESCRIPTION_MAX,
   PROJECT_NAME_MAX,
   type Project,
@@ -16,6 +17,7 @@ import {
   type TodoError,
 } from "../shared/index.ts";
 
+const idInput = z.string().min(1).max(ID_MAX_LENGTH);
 export type TodoToolDeps = {
   service: TodoService;
   actor: UserId;
@@ -117,7 +119,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
       title: "Update to-do project",
       description: "Rename a project or change its description (null clears it).",
       inputSchema: {
-        projectId: z.string().min(1),
+        projectId: idInput,
         name: projectName.optional(),
         description: projectDescription.nullable().optional(),
       },
@@ -136,7 +138,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     {
       title: "Remove to-do project",
       description: "Permanently delete a project and every task in it.",
-      inputSchema: { projectId: z.string().min(1) },
+      inputSchema: { projectId: idInput },
     },
     async ({ projectId }) => {
       const result = await service.removeProject(parseProjectId(projectId));
@@ -156,7 +158,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
       title: "List tasks in a project",
       description: "List the tasks in a to-do project, optionally filtered by status.",
       inputSchema: {
-        projectId: z.string().min(1),
+        projectId: idInput,
         status: z.enum(["open", "done", "all"]).optional(),
       },
     },
@@ -187,7 +189,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
       title: "Add task",
       description: "Add a task to a to-do project.",
       inputSchema: {
-        projectId: z.string().min(1),
+        projectId: idInput,
         title: taskTitle,
         notes: taskNotes.optional(),
       },
@@ -208,7 +210,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     {
       title: "Complete task",
       description: "Mark a task as done.",
-      inputSchema: { taskId: z.string().min(1) },
+      inputSchema: { taskId: idInput },
     },
     async ({ taskId }) => {
       const result = await service.completeTask(parseTaskId(taskId), actor);
@@ -223,7 +225,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     {
       title: "Reopen task",
       description: "Move a done task back to open.",
-      inputSchema: { taskId: z.string().min(1) },
+      inputSchema: { taskId: idInput },
     },
     async ({ taskId }) => {
       const result = await service.reopenTask(parseTaskId(taskId));
@@ -239,7 +241,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
       title: "Update task",
       description: "Change a task's title or notes (null clears the notes).",
       inputSchema: {
-        taskId: z.string().min(1),
+        taskId: idInput,
         title: taskTitle.optional(),
         notes: taskNotes.nullable().optional(),
       },
@@ -257,7 +259,7 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     {
       title: "Remove task",
       description: "Permanently delete a task.",
-      inputSchema: { taskId: z.string().min(1) },
+      inputSchema: { taskId: idInput },
     },
     async ({ taskId }) => {
       const result = await service.removeTask(parseTaskId(taskId));

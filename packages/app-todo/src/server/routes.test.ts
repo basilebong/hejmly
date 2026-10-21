@@ -135,6 +135,21 @@ const createTask = async (
 };
 
 describe("todo routes", () => {
+  test("ids longer than 64 characters are rejected as invalid, 64 is well-formed", async () => {
+    await withTodo(async ({ app, cookie }) => {
+      const long = "x".repeat(65);
+      const limit = "x".repeat(64);
+      expect((await send(app, cookie, "GET", `/api/todo/projects/${long}`)).status).toBe(400);
+      expect((await send(app, cookie, "GET", `/api/todo/projects/${limit}`)).status).toBe(404);
+      expect(
+        (await send(app, cookie, "PATCH", `/api/todo/tasks/${long}`, { done: true })).status,
+      ).toBe(400);
+      expect(
+        (await send(app, cookie, "PATCH", `/api/todo/tasks/${limit}`, { done: true })).status,
+      ).toBe(404);
+    });
+  });
+
   test("every route is 401 without a session", async () => {
     await withTodo(async ({ app }) => {
       const probes: [string, string, unknown?][] = [

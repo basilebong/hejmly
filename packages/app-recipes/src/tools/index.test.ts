@@ -78,6 +78,18 @@ const recipeIdOf = (result: unknown): string => {
 };
 
 describe("recipe MCP tools", () => {
+  test("an over-long recipe id is refused before the handler runs, so nothing is audited", async () => {
+    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
+      const client = await connect(db, await seedUser(auth));
+      const result = await client.callTool({
+        name: "recipes__get",
+        arguments: { recipeId: "x".repeat(65) },
+      });
+      expect(result.isError).toBe(true);
+      expect(auditEntries(db)).toEqual([]);
+    });
+  });
+
   test("lists the registered tools", async () => {
     await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
       const client = await connect(db, await seedUser(auth));

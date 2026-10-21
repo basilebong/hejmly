@@ -87,6 +87,21 @@ const textOf = (result: unknown): string => {
 };
 
 describe("todo MCP tools", () => {
+  test("over-long ids are refused before the handler runs, so nothing is audited", async () => {
+    await withClient(async (client, _actor, db) => {
+      const long = "x".repeat(65);
+      for (const [name, args] of [
+        ["todo__complete_task", { taskId: long }],
+        ["todo__list_tasks", { projectId: long }],
+        ["todo__add_task", { projectId: long, title: "Dig" }],
+      ] as const) {
+        const result = await call(client, name, args);
+        expect(result.isError).toBe(true);
+      }
+      expect(auditActions(db)).toEqual([]);
+    });
+  });
+
   test("lists the registered tools", async () => {
     await withClient(async (client) => {
       const { tools } = await client.listTools();

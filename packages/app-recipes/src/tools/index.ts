@@ -7,12 +7,14 @@ import type { RecipeService } from "../server/index.ts";
 import {
   type CreateRecipeInput,
   formatMinutes,
+  ID_MAX_LENGTH,
   parseRecipeId,
   type Recipe,
   type RecipeError,
   type RecipeSummary,
 } from "../shared/index.ts";
 
+const idInput = z.string().min(1).max(ID_MAX_LENGTH);
 export type RecipeToolDeps = {
   service: RecipeService;
   actor: UserId;
@@ -120,7 +122,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     {
       title: "Get a recipe",
       description: "Fetch a full recipe — ingredients and method — by id.",
-      inputSchema: { recipeId: z.string().min(1) },
+      inputSchema: { recipeId: idInput },
     },
     async ({ recipeId }) => {
       const result = await service.get(parseRecipeId(recipeId));
@@ -201,7 +203,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
       description:
         "Replace an existing recipe's details — title, ingredients, and method — by id. The photo is preserved.",
       inputSchema: {
-        recipeId: z.string().min(1),
+        recipeId: idInput,
         title: z.string().trim().min(1).max(120),
         description: z.string().trim().max(2000).optional(),
         category: z.enum(["Starter", "Main", "Dessert", "Other"]),
@@ -258,7 +260,7 @@ export const registerRecipeTools = (server: McpServer, deps: RecipeToolDeps): vo
     {
       title: "Remove a recipe",
       description: "Permanently delete a recipe by id.",
-      inputSchema: { recipeId: z.string().min(1) },
+      inputSchema: { recipeId: idInput },
     },
     async ({ recipeId }) => {
       const result = await service.remove(parseRecipeId(recipeId));

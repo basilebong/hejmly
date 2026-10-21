@@ -4,8 +4,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { match } from "ts-pattern";
 import * as z from "zod";
 import type { CleanupScheduler, GroceryService } from "../server/index.ts";
-import { type GroceryError, type GroceryItem, parseGroceryItemId } from "../shared/index.ts";
+import {
+  type GroceryError,
+  type GroceryItem,
+  ID_MAX_LENGTH,
+  parseGroceryItemId,
+} from "../shared/index.ts";
 
+const idInput = z.string().min(1).max(ID_MAX_LENGTH);
 export type GroceryToolDeps = {
   service: GroceryService;
   actor: UserId;
@@ -122,7 +128,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     {
       title: "Mark grocery item purchased",
       description: "Mark a grocery item as purchased.",
-      inputSchema: { itemId: z.string().min(1) },
+      inputSchema: { itemId: idInput },
     },
     async ({ itemId }) => {
       const result = await service.markPurchased(parseGroceryItemId(itemId), actor);
@@ -147,7 +153,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     {
       title: "Mark grocery item pending",
       description: "Move a purchased grocery item back to pending.",
-      inputSchema: { itemId: z.string().min(1) },
+      inputSchema: { itemId: idInput },
     },
     async ({ itemId }) => {
       const result = await service.markPending(parseGroceryItemId(itemId));
@@ -172,7 +178,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
       title: "Update grocery item",
       description: "Update the name or description of a grocery item.",
       inputSchema: {
-        itemId: z.string().min(1),
+        itemId: idInput,
         name: z.string().trim().min(1).max(120).optional(),
         description: z.string().trim().max(280).nullable().optional(),
       },
@@ -198,7 +204,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
     {
       title: "Remove grocery item",
       description: "Permanently remove an item from the grocery list.",
-      inputSchema: { itemId: z.string().min(1) },
+      inputSchema: { itemId: idInput },
     },
     async ({ itemId }) => {
       const result = await service.remove(parseGroceryItemId(itemId));

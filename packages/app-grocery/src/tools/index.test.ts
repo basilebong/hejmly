@@ -100,6 +100,18 @@ const itemIdOf = (result: unknown): string => {
 };
 
 describe("grocery MCP tools", () => {
+  test("an over-long item id is refused before the handler runs, so nothing is audited", async () => {
+    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
+      const client = await connect(db, await seedUser(auth));
+      const result = await client.callTool({
+        name: "grocery__remove_item",
+        arguments: { itemId: "x".repeat(65) },
+      });
+      expect(result.isError).toBe(true);
+      expect(auditEntries(db)).toEqual([]);
+    });
+  });
+
   test("lists the registered tools", async () => {
     await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
       const client = await connect(db, await seedUser(auth));

@@ -163,6 +163,15 @@ describe("recipe routes", () => {
     });
   });
 
+  test("a recipe id longer than 64 characters is rejected as invalid, 64 is well-formed", async () => {
+    await withRecipes(async ({ app, cookie }) => {
+      const tooLong = await app.request(`/api/recipes/${"x".repeat(65)}`, { headers: { cookie } });
+      expect(tooLong.status).toBe(400);
+      const atLimit = await app.request(`/api/recipes/${"x".repeat(64)}`, { headers: { cookie } });
+      expect(atLimit.status).toBe(404);
+    });
+  });
+
   describe("auth", () => {
     test("every route is 401 without a session", async () => {
       await withRecipes(async ({ app }) => {

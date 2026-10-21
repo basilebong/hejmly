@@ -129,6 +129,21 @@ const createItem = async (
 };
 
 describe("grocery routes", () => {
+  test("an item id longer than 64 characters is rejected as invalid, 64 is well-formed", async () => {
+    await withGrocery(async ({ app, cookie }) => {
+      const tooLong = await app.request(`/api/grocery/items/${"x".repeat(65)}`, {
+        method: "DELETE",
+        headers: { cookie },
+      });
+      expect(tooLong.status).toBe(400);
+      const atLimit = await app.request(`/api/grocery/items/${"x".repeat(64)}`, {
+        method: "DELETE",
+        headers: { cookie },
+      });
+      expect(atLimit.status).toBe(404);
+    });
+  });
+
   test("removing a member keeps the items they added, credited to someone unknown", async () => {
     await withGrocery(async ({ app, cookie, userId, db, addMember }) => {
       const anna = await addMember();
