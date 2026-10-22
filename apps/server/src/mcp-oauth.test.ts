@@ -394,6 +394,22 @@ describe("MCP over OAuth (household membership)", () => {
       { allowedEmails: "basile@example.com,former@example.com" },
     );
   });
+
+  test("a membership lookup that fails refuses the call instead of letting it through", async () => {
+    await withMcpServer(async ({ baseURL, cookie, db }) => {
+      const { accessToken } = await runClaudeOAuthFlow(baseURL, cookie);
+      db.$client.run("ALTER TABLE users RENAME TO users_unreachable");
+
+      const res = await callMcp(baseURL, accessToken, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "grocery__add_item", arguments: { name: "Milk during an outage" } },
+      });
+      expect(res.status).toBe(500);
+      expect(db.$client.query("SELECT COUNT(*) AS n FROM grocery_items").get()).toEqual({ n: 0 });
+    });
+  });
 });
 
 describe("MCP over OAuth (resource binding)", () => {

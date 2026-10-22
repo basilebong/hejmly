@@ -9,6 +9,7 @@ import {
   oauthConsents,
   oauthRefreshTokens,
   sessions,
+  verifications,
 } from "./schema.ts";
 
 const MEMBER = "basile@example.com";
@@ -64,6 +65,25 @@ const seedOAuthGrant = async (db: Db, userId: string, clientId: string): Promise
     updatedAt: now,
   });
 };
+
+const seedPendingCode = async (db: Db, userId: string): Promise<void> => {
+  const now = new Date();
+  await db.insert(verifications).values({
+    id: crypto.randomUUID(),
+    identifier: `code-${userId}`,
+    value: JSON.stringify({ type: "authorization_code", userId, query: {} }),
+    expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+const pendingCodesOf = (db: Db, userId: string): unknown =>
+  db.$client
+    .query(
+      "SELECT COUNT(*) AS n FROM verifications WHERE CASE WHEN json_valid(value) THEN json_extract(value, '$.userId') END = ?",
+    )
+    .get(userId);
 
 const rowsOwnedBy = async (db: Db, userId: string) => ({
   sessions: (await db.select().from(sessions)).filter((r) => r.userId === userId).length,
@@ -150,5 +170,88 @@ describe("membership", () => {
         consents: 1,
       });
     });
+  });
+
+  test("revokeFormerMembers deletes a former member's unexchanged authorization codes only", async () => {
+    await withTestAuth({ allowedEmails: `${MEMBER},${FORMER}` }, async ({ auth, db, restart }) => {
+      const memberId = await seedUser(auth, MEMBER);
+      const formerId = await seedUser(auth, FORMER);
+      await seedPendingCode(db, memberId);
+      await seedPendingCode(db, formerId);
+      const now = new Date();
+      await db.insert(verifications).values({
+        id: crypto.randomUUID(),
+        identifier: "google-oauth-state",
+        value: "not json",
+        expiresAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const { membership } = restart({ allowedEmails: MEMBER });
+      expect((await membership.revokeFormerMembers()).kind).toBe("ok");
+
+      expect(pendingCodesOf(db, formerId)).toEqual({ n: 0 });
+      expect(pendingCodesOf(db, memberId)).toEqual({ n: 1 });
+      expect(
+        db.$client.query("SELECT COUNT(*) AS n FROM verifications WHERE value = 'not json'").get(),
+      ).toEqual({ n: 1 });
+    });
+  });
+
+  test("revokeFormerMembers refuses to run against an empty allowlist", async () => {
+    await withTestAuth({ allowedEmails: MEMBER }, async ({ auth, db, restart }) => {
+      const memberId = await seedUser(auth, MEMBER);
+      await seedOAuthGrant(db, memberId, "client-member");
+
+      const { membership } = restart({ allowedEmails: "" });
+      const result = await membership.revokeFormerMembers();
+
+      expect(result.kind === "err" ? result.error.kind : result.kind).toBe("empty_allowlist");
+      expect(await rowsOwnedBy(db, memberId)).toEqual({
+        sessions: 1,
+        accessTokens: 1,
+        refreshTokens: 1,
+        consents: 1,
+      });
+    });
+  });
+
+  test("a former member's cached session cookie stops working once their session is revoked", async () => {
+    await withTestAuth(
+      { allowedEmails: `${MEMBER},${FORMER}` },
+      async ({ auth, signSessionCookie, restart }) => {
+        const ctx = await auth.$context;
+        const cachedCookieFor = async (email: string): Promise<string> => {
+          const user = await ctx.internalAdapter.createUser(
+            { name: email, email },
+            googleProvisioningSource,
+          );
+          const session = await ctx.internalAdapter.createSession(user.id);
+          const token = `Hejmly.session_token=${await signSessionCookie(session.token)}`;
+          const res = await auth.handler(
+            new Request("http://localhost:5173/api/auth/get-session", {
+              headers: { cookie: token },
+            }),
+          );
+          const cache = res.headers
+            .getSetCookie()
+            .map((c) => c.split(";")[0] ?? "")
+            .find((c) => c.startsWith("Hejmly.session_data="));
+          if (cache === undefined) throw new Error("expected a session cache cookie");
+          return `${token}; ${cache}`;
+        };
+        const memberCookie = await cachedCookieFor(MEMBER);
+        const formerCookie = await cachedCookieFor(FORMER);
+
+        const after = restart({ allowedEmails: MEMBER });
+        expect((await after.membership.revokeFormerMembers()).kind).toBe("ok");
+
+        const getSession = (cookie: string) =>
+          after.auth.api.getSession({ headers: new Headers({ cookie }) });
+        expect(await getSession(formerCookie)).toBeNull();
+        expect((await getSession(memberCookie))?.user.email).toBe(MEMBER);
+      },
+    );
   });
 });

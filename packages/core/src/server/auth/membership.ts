@@ -1,11 +1,21 @@
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
+import * as v from "valibot";
 import { err, ok, parseUserId, type Result, type UserId } from "../../shared/index.ts";
 import type { Db } from "../db/index.ts";
 import { isAllowedEmail } from "./allowlist.ts";
 import type { Auth } from "./index.ts";
-import { oauthAccessTokens, oauthConsents, oauthRefreshTokens, users } from "./schema.ts";
+import {
+  oauthAccessTokens,
+  oauthConsents,
+  oauthRefreshTokens,
+  users,
+  verifications,
+} from "./schema.ts";
+import { findUserEmail } from "./users.ts";
 
-export type MembershipError = { kind: "internal_error"; message: string };
+export type MembershipError =
+  | { kind: "empty_allowlist"; message: string }
+  | { kind: "internal_error"; message: string; cause: unknown };
 
 export type MembershipService = {
   allowsEmail(email: unknown): boolean;
@@ -19,15 +29,26 @@ export type CreateMembershipOptions = {
   allowedEmails: ReadonlySet<string>;
 };
 
-const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : "Unexpected error");
+const internalError = (cause: unknown): MembershipError => ({
+  kind: "internal_error",
+  message: cause instanceof Error ? cause.message : "Unexpected error",
+  cause,
+});
 
-export const findUserEmail = async (db: Db, userId: string): Promise<string | null> => {
-  const rows = await db
-    .select({ email: users.email })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  return rows[0]?.email ?? null;
+const authorizationCodeSchema = v.object({
+  type: v.literal("authorization_code"),
+  userId: v.string(),
+});
+
+const authorizationCodeOwner = (value: string): string | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  const code = v.safeParse(authorizationCodeSchema, parsed);
+  return code.success ? code.output.userId : null;
 };
 
 export const createMembershipService = ({
@@ -41,11 +62,17 @@ export const createMembershipService = ({
     try {
       return ok(isAllowedEmail(allowedEmails, await findUserEmail(db, userId)));
     } catch (e) {
-      return err({ kind: "internal_error", message: errorMessage(e) });
+      return err(internalError(e));
     }
   },
 
   async revokeFormerMembers() {
+    if (allowedEmails.size === 0) {
+      return err({
+        kind: "empty_allowlist",
+        message: "The allowlist is empty; refusing to revoke every user",
+      });
+    }
     try {
       const everyone = await db.select({ id: users.id, email: users.email }).from(users);
       const revoked = everyone
@@ -60,9 +87,25 @@ export const createMembershipService = ({
       await db.delete(oauthRefreshTokens).where(inArray(oauthRefreshTokens.userId, revoked));
       await db.delete(oauthConsents).where(inArray(oauthConsents.userId, revoked));
 
+      // The OAuth provider keeps an unexchanged authorization code as a
+      // verification row whose JSON value names the user; left alone it could
+      // still be traded for fresh tokens after this pass.
+      const revokedIds = new Set<string>(revoked);
+      const pendingCodes = (
+        await db.select({ id: verifications.id, value: verifications.value }).from(verifications)
+      )
+        .filter((row) => {
+          const owner = authorizationCodeOwner(row.value);
+          return owner !== null && revokedIds.has(owner);
+        })
+        .map((row) => row.id);
+      if (pendingCodes.length > 0) {
+        await db.delete(verifications).where(inArray(verifications.id, pendingCodes));
+      }
+
       return ok({ revoked });
     } catch (e) {
-      return err({ kind: "internal_error", message: errorMessage(e) });
+      return err(internalError(e));
     }
   },
 });

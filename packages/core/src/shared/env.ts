@@ -17,6 +17,13 @@ const flagSchema = v.pipe(
 const urlSchema = v.pipe(v.string(), v.url());
 const nonEmptySchema = v.pipe(v.string(), v.minLength(1));
 const secretSchema = v.pipe(v.string(), v.minLength(32));
+const emailListSchema = v.pipe(
+  v.string(),
+  v.check(
+    (raw) => raw.split(",").some((entry) => entry.trim().length > 0),
+    "must list at least one email",
+  ),
+);
 
 const isTimeZone = (raw: string): boolean => {
   try {
@@ -57,7 +64,7 @@ const runtimeEnvSchema = v.object({
   GOOGLE_ID: nonEmptySchema,
   GOOGLE_SECRET: nonEmptySchema,
   DATABASE_PATH: nonEmptySchema,
-  HEJMLY_ALLOWED_EMAILS: nonEmptySchema,
+  HEJMLY_ALLOWED_EMAILS: emailListSchema,
   HEJMLY_TIMEZONE: v.optional(timeZoneSchema, "UTC"),
   MCP_HOST: v.optional(nonEmptySchema),
 });

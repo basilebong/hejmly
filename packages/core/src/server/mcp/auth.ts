@@ -64,7 +64,11 @@ export const createMcpAuthGuard = (config: McpAuthConfig, membership: Membership
       // The JWT is verified locally and outlives any change to the allowlist, so
       // membership is re-read on every request rather than trusted from the token.
       const member = await membership.isMember(actor);
-      if (member.kind === "err") throw new Error(member.error.message);
+      if (member.kind === "err") {
+        throw new Error(`MCP membership lookup failed: ${member.error.message}`, {
+          cause: member.error,
+        });
+      }
       if (!member.value) return jsonError("forbidden", 403);
 
       return await handler(req, actor);
