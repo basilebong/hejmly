@@ -1,3 +1,9 @@
+export {
+  ANNOUNCE_WINDOW_MS,
+  type AnnouncerOptions,
+  createGroceryAnnouncer,
+  type GroceryAnnouncer,
+} from "./announcer.ts";
 export type { CleanupScheduler } from "./cleanup-scheduler.ts";
 export { createCleanupScheduler, PURCHASED_TTL_MS } from "./cleanup-scheduler.ts";
 export type { GroceryRoutes } from "./routes.ts";

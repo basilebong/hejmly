@@ -1,5 +1,9 @@
 import { dirname, resolve } from "node:path";
-import { createCleanupScheduler, createGroceryService } from "@hejmly/app-grocery/server";
+import {
+  createCleanupScheduler,
+  createGroceryAnnouncer,
+  createGroceryService,
+} from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
 import { createTodoService } from "@hejmly/app-todo/server";
 import {
@@ -7,6 +11,8 @@ import {
   createAuditRecorder,
   createAuth,
   createDb,
+  createPushService,
+  fetchPushSender,
   isAllowedEmail,
   parseAllowedEmails,
 } from "@hejmly/core/server";
@@ -45,9 +51,17 @@ const todoService = createTodoService(db, {
 });
 const assistantsService = createAssistantsService(db);
 const audit = createAuditRecorder(db);
-const cleanup = createCleanupScheduler({
+const pushService = createPushService(db, {
+  isMember: (email) => isAllowedEmail(allowedEmails, email),
+  subject: env.BETTER_AUTH_URL,
+  send: fetchPushSender(),
+});
+const jobsDataPath = resolve(dirname(env.DATABASE_PATH), "grocery-cleanup.db");
+const cleanup = createCleanupScheduler({ service: groceryService, dataPath: jobsDataPath });
+const announcer = createGroceryAnnouncer({
   service: groceryService,
-  dataPath: resolve(dirname(env.DATABASE_PATH), "grocery-cleanup.db"),
+  push: pushService,
+  dataPath: jobsDataPath,
 });
 
 const app = createApp({
@@ -59,7 +73,8 @@ const app = createApp({
   staticRoot,
   audit,
   assistants: { service: assistantsService },
-  grocery: { service: groceryService, cleanup },
+  grocery: { service: groceryService, cleanup, announcer },
+  push: { service: pushService },
   recipes: { service: recipeService },
   todo: { service: todoService },
 });
@@ -71,6 +86,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   if (shuttingDown) return;
   shuttingDown = true;
   console.info(`Hejmly server received ${signal}, shutting down`);
+  await announcer.close();
   await cleanup.close();
   await server.stop();
   process.exit(0);

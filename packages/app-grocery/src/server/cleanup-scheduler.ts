@@ -38,6 +38,9 @@ export const createCleanupScheduler = (opts: CleanupOptions): CleanupScheduler =
       }
     },
   });
+  bq.on("error", (error) => {
+    console.error("grocery cleanup worker error", { error: error.name });
+  });
 
   const addJob = async (itemId: GroceryItemId, delay: number): Promise<void> => {
     await bq.add(

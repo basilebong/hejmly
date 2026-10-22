@@ -15,9 +15,18 @@
   },
   "include": ["src/**/*"],
   "references": [
-    { "path": "../../packages/core" },
-    { "path": "../../packages/app-grocery" },
-    { "path": "../../packages/app-recipes" },
-    { "path": "../../packages/app-todo" }
-  ]
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/app-grocery"
+    },
+    {
+      "path": "../../packages/app-recipes"
+    },
+    {
+      "path": "../../packages/app-todo"
+    }
+  ],
+  "exclude": ["src/sw.ts"]
 }

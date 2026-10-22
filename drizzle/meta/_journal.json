@@ -92,6 +92,13 @@
       "when": 1792690696855,
       "tag": "0012_futuristic_stone_men",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792695365420,
+      "tag": "0013_first_nomad",
+      "breakpoints": true
     }
   ]
 }

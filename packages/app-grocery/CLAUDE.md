@@ -26,3 +26,16 @@ Owns the grocery list feature end-to-end. Exports FOUR subpaths:
   shadcn primitives from `apps/web/src/components/ui` where possible.
 - Component sizes: prefer `min-h-12` for primary inputs/buttons; the
   shadcn defaults are desktop-sized.
+- New items are announced to the rest of the household by
+  `createGroceryAnnouncer` (`src/server/announcer.ts`): one push per person
+  per minute window, sent a few seconds after the window closes, listing that
+  person's items from the window that are still pending. Each window has its
+  own notification tag, so announcements never replace each other. An item
+  reported after its window's job has started gets a follow-up job; items
+  already announced are remembered in memory and never sent twice. Routes AND
+  the `grocery__add_item` MCP tool call `announcer.itemAdded`; a failed
+  announcement is logged, never fails the add.
+- bunqueue's embedded mode allows ONE `dataPath` per process. The
+  announcer and the cleanup scheduler must be given the same path
+  (`apps/server` passes `jobsDataPath`); a second path throws at startup.
+

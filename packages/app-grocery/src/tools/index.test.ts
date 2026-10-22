@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as v from "valibot";
-import type { CleanupScheduler } from "../server/index.ts";
+import type { CleanupScheduler, GroceryAnnouncer } from "../server/index.ts";
 import { createGroceryService } from "../server/index.ts";
 import { type GroceryItemId, parseGroceryItemId } from "../shared/index.ts";
 import { registerGroceryTools } from "./index.ts";
@@ -32,6 +32,19 @@ const createStubCleanup = (): { scheduler: CleanupScheduler; calls: CleanupCalls
 
 const noopCleanup = createStubCleanup().scheduler;
 
+const recordingAnnouncer = (): { announcer: GroceryAnnouncer; announced: string[] } => {
+  const announced: string[] = [];
+  return {
+    announced,
+    announcer: {
+      async itemAdded(item) {
+        announced.push(item.name);
+      },
+      async close() {},
+    },
+  };
+};
+
 const seedUser = async (auth: Auth): Promise<UserId> => {
   const ctx = await auth.$context;
   const user = await ctx.internalAdapter.createUser(
@@ -45,6 +58,7 @@ const connect = async (
   db: Db,
   actor: UserId,
   cleanup: CleanupScheduler = noopCleanup,
+  announcer: GroceryAnnouncer = recordingAnnouncer().announcer,
 ): Promise<Client> => {
   const server = new McpServer({ name: "Hejmly-test", version: "1.0.0" });
   registerGroceryTools(server, {
@@ -52,6 +66,7 @@ const connect = async (
     actor,
     audit: createAuditRecorder(db),
     cleanup,
+    announcer,
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "1.0.0" });
@@ -264,6 +279,7 @@ describe("grocery MCP tools", () => {
         actor,
         audit: failingAudit,
         cleanup: noopCleanup,
+        announcer: recordingAnnouncer().announcer,
       });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       const client = new Client({ name: "test-client", version: "1.0.0" });
@@ -296,6 +312,15 @@ describe("grocery MCP tools", () => {
       await client.callTool({ name: "grocery__mark_pending", arguments: { itemId } });
       await client.callTool({ name: "grocery__remove_item", arguments: { itemId } });
       expect(calls.cancelled).toEqual([parseGroceryItemId(itemId), parseGroceryItemId(itemId)]);
+    });
+  });
+
+  test("add_item announces the new item to the household", async () => {
+    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
+      const { announcer, announced } = recordingAnnouncer();
+      const client = await connect(db, await seedUser(auth), noopCleanup, announcer);
+      await client.callTool({ name: "grocery__add_item", arguments: { name: "Eggs" } });
+      expect(announced).toEqual(["Eggs"]);
     });
   });
 });

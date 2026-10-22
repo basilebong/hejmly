@@ -6,6 +6,7 @@ export default defineConfig({
     "./packages/core/src/server/auth/schema.ts",
     "./packages/core/src/server/audit/schema.ts",
     "./packages/core/src/server/idempotency/schema.ts",
+    "./packages/core/src/server/push/schema.ts",
     "./packages/core/src/server/db/schema.ts",
     "./packages/app-*/src/server/schema.ts",
   ],
