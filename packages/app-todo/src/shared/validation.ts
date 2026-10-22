@@ -1,4 +1,7 @@
+import { UserIdSchema } from "@hejmly/core/shared";
 import * as v from "valibot";
+import { DueDateSchema } from "./due.ts";
+import { ID_MAX_LENGTH } from "./ids.ts";
 
 export const PROJECT_NAME_MAX = 80;
 export const PROJECT_DESCRIPTION_MAX = 280;
@@ -49,21 +52,37 @@ export const UpdateProjectInputSchema = v.pipe(
 );
 export type UpdateProjectInput = v.InferOutput<typeof UpdateProjectInputSchema>;
 
+export const AssigneeIdSchema = v.pipe(v.string(), v.maxLength(ID_MAX_LENGTH), UserIdSchema);
+
 export const CreateTaskInputSchema = v.object({
   title: TaskTitleSchema,
   notes: v.optional(TaskNotesSchema),
+  dueOn: v.optional(DueDateSchema),
+  assigneeId: v.optional(AssigneeIdSchema),
 });
 export type CreateTaskInput = v.InferOutput<typeof CreateTaskInputSchema>;
+
+export const TASK_PATCH_EMPTY = "Provide a title, notes, due date or assignee to update";
+
+export const isTaskPatch = (input: {
+  title?: unknown;
+  notes?: unknown;
+  dueOn?: unknown;
+  assigneeId?: unknown;
+}): boolean =>
+  input.title !== undefined ||
+  input.notes !== undefined ||
+  input.dueOn !== undefined ||
+  input.assigneeId !== undefined;
 
 export const UpdateTaskInputSchema = v.pipe(
   v.object({
     title: v.optional(TaskTitleSchema),
     notes: v.optional(v.nullable(TaskNotesSchema)),
+    dueOn: v.optional(v.nullable(DueDateSchema)),
+    assigneeId: v.optional(v.nullable(AssigneeIdSchema)),
   }),
-  v.check(
-    (input) => input.title !== undefined || input.notes !== undefined,
-    "Provide a title or notes to update",
-  ),
+  v.check((input) => isTaskPatch(input), TASK_PATCH_EMPTY),
 );
 export type UpdateTaskInput = v.InferOutput<typeof UpdateTaskInputSchema>;
 

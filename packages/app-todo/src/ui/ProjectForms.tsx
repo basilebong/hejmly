@@ -17,15 +17,11 @@ const fields = {
 
 const ADD_COPY: TwoFieldFormCopy = {
   ...fields,
-  heading: "New project",
-  subheading: "Group related tasks together.",
   submitLabel: "Create project",
 };
 
 const EDIT_COPY: TwoFieldFormCopy = {
   ...fields,
-  heading: "Edit project",
-  subheading: "Rename it or change the description.",
   submitLabel: "Save changes",
 };
 

@@ -1,6 +1,7 @@
 import { parseUserId, UserIdSchema } from "@hejmly/core/shared";
 import * as v from "valibot";
 import {
+  DueDateSchema,
   type Project,
   parseProjectId,
   parseTaskId,
@@ -8,6 +9,7 @@ import {
   type TaskCounts,
   type TaskStatus,
   type TodoAuthor,
+  type TodoMember,
 } from "../shared/index.ts";
 import type { ProjectRow, TaskRow } from "./schema.ts";
 
@@ -53,6 +55,20 @@ export const toAuthor = (user: AuthorRow): TodoAuthor => {
   };
 };
 
+export const toMember = (user: NonNullable<AuthorRow>): TodoMember => {
+  const name = user.name?.trim() ?? "";
+  const shown = name.length > 0 ? name : "Member";
+  return { id: parseUserId(user.id), name: shown, initial: initialOf(shown) };
+};
+
+const parseDueOn = (rowId: string, raw: string | null): Task["dueOn"] => {
+  if (raw === null) return null;
+  const parsed = v.safeParse(DueDateSchema, raw);
+  if (parsed.success) return parsed.output;
+  console.error("todo: corrupt due_on, dropping it", { rowId, raw });
+  return null;
+};
+
 export const rowToProject = (
   row: ProjectRow,
   author: AuthorRow,
@@ -70,12 +86,14 @@ export const rowToProject = (
   };
 };
 
-export const rowToTask = (row: TaskRow, author: AuthorRow): Task => ({
+export const rowToTask = (row: TaskRow, author: AuthorRow, assignee: AuthorRow): Task => ({
   id: parseTaskId(row.id),
   projectId: parseProjectId(row.projectId),
   title: row.title,
   notes: row.notes,
   status: parseStatus(row.id, row.statusJson),
+  dueOn: parseDueOn(row.id, row.dueOn),
+  assignee: assignee === null ? null : toMember(assignee),
   createdAt: row.createdAt.getTime(),
   updatedAt: row.updatedAt.getTime(),
   addedBy: toAuthor(author),

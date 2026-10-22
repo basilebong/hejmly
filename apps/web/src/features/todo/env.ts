@@ -7,6 +7,7 @@ import {
   createTask,
   deleteProject,
   deleteTask,
+  fetchMembers,
   fetchProject,
   fetchProjects,
   setTaskDone,
@@ -16,6 +17,7 @@ import {
 import type { TodoApi, TodoCacheEnv } from "./cache.ts";
 
 const todoApi: TodoApi = {
+  fetchMembers,
   fetchProjects,
   fetchProject,
   createProject,

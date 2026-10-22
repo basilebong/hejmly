@@ -1,6 +1,7 @@
 import {
   type CreateProjectInput,
   type CreateTaskInput,
+  DueDateSchema,
   type Project,
   type ProjectId,
   ProjectIdSchema,
@@ -8,6 +9,7 @@ import {
   type Task,
   type TaskId,
   TaskIdSchema,
+  type TodoMember,
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@hejmly/app-todo/shared";
@@ -18,6 +20,8 @@ const AuthorSchema = v.union([
   v.object({ kind: v.literal("user"), id: UserIdSchema, name: v.string(), initial: v.string() }),
   v.object({ kind: v.literal("unknown"), name: v.string(), initial: v.string() }),
 ]);
+
+const MemberSchema = v.object({ id: UserIdSchema, name: v.string(), initial: v.string() });
 
 const ProjectSchema = v.object({
   id: ProjectIdSchema,
@@ -38,11 +42,14 @@ const TaskSchema = v.object({
     v.object({ kind: v.literal("open") }),
     v.object({ kind: v.literal("done"), doneAt: v.number(), doneBy: UserIdSchema }),
   ]),
+  dueOn: v.nullable(DueDateSchema),
+  assignee: v.nullable(MemberSchema),
   createdAt: v.number(),
   updatedAt: v.number(),
   addedBy: AuthorSchema,
 });
 
+const MemberListSchema = v.object({ members: v.array(MemberSchema) });
 const ProjectListSchema = v.object({ projects: v.array(ProjectSchema) });
 const ProjectEnvelopeSchema = v.object({ project: ProjectSchema });
 const ProjectDetailSchema = v.object({ project: ProjectSchema, tasks: v.array(TaskSchema) });
@@ -78,6 +85,11 @@ const jsonInit = (method: string, body: unknown, idempotencyKey?: string): Reque
 
 const projectPath = (id: ProjectId): string => `/api/todo/projects/${encodeURIComponent(id)}`;
 const taskPath = (id: TaskId): string => `/api/todo/tasks/${encodeURIComponent(id)}`;
+
+export const fetchMembers = async (): Promise<TodoMember[]> => {
+  const res = await fetch("/api/todo/members", { credentials: "include" });
+  return [...(await parseJson(res, MemberListSchema)).members];
+};
 
 export const fetchProjects = async (): Promise<Project[]> => {
   const res = await fetch("/api/todo/projects", { credentials: "include" });

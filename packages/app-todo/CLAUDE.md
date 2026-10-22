@@ -8,9 +8,10 @@ Exports FOUR subpaths (mirrors `app-grocery`):
   parsers (`parseProjectDraft`, `diffTaskDraft`, …) and `countTasks`.
 - `./server` — Drizzle `todo_projects` + `todo_tasks` schema, a service
   returning `Result<T, TodoError>`, and Hono routes mounted at `/api/todo`.
-- `./tools` — MCP `todo__*` tools (projects and tasks).
-- `./ui` — React components: project rows with progress, task rows + actions
-  menu, the project header, add/edit forms, skeletons.
+- `./tools` — MCP `todo__*` tools (members, projects and tasks).
+- `./ui` — React components: project rows with progress, task rows, the task
+  detail view, the project header, add/edit forms (due date + member
+  pickers), skeletons.
 
 ## Local rules
 
@@ -26,6 +27,22 @@ Exports FOUR subpaths (mirrors `app-grocery`):
   `ON DELETE SET NULL`, never cascade: projects are shared, so removing one
   member must not delete what others put in them. A missing author serializes
   as `{ kind: "unknown" }`.
+- `due_on` is a calendar day (`YYYY-MM-DD`, branded `DueDate`), never a
+  timestamp: no time, no time zone. `DueDateSchema` rejects days that don't
+  exist (`2026-02-30`); `isoDate` alone does not. "Today" is the viewer's local
+  day (`localDueDate`), so overdue/today are computed on the client, never
+  stored. Open tasks are shown dated-first, soonest first (`orderOpenTasks`).
+- `assignee_user_id` is nullable and `ON DELETE SET NULL`, like the author
+  columns. Only household members can be assigned: the service checks
+  `isMember(email)` (the server passes the `HEJMLY_ALLOWED_EMAILS` allowlist)
+  and returns `member_not_found` otherwise, so a former member whose user row
+  still exists can't be assigned. `GET /api/todo/members` and
+  `todo__list_members` list exactly the assignable people, never their
+  emails (a blank name shows as "Member"). The membership check and the
+  write run in one synchronous `immediate` transaction: bun:sqlite
+  transactions are sync in Drizzle (an async callback would commit before
+  its awaits), and `immediate` takes the write lock up front so no other
+  connection can delete the user or project in between.
 - Whitespace-only description/notes are stored as `null` (`blankToNull` in the
   service), so HTTP and MCP agree.
 - IDs come from a per-service `monotonicFactory()` ULID so rows created in the
@@ -55,6 +72,18 @@ Exports FOUR subpaths (mirrors `app-grocery`):
   that mutation changed.
 - MCP failures return `structuredContent: { error }` and are audited with the
   error kind, like successes.
-- Migrations: `bun run db:generate`, never hand-written SQL.
+- Migrations: `bun run db:generate`, never hand-written SQL. drizzle-kit
+  0.31.10 drops `ON DELETE` when it ADDs a column with a foreign key in SQLite
+  (`ALTER TABLE … ADD … REFERENCES t(c)`, see `SQLiteAlterTableAddColumnConvertor`).
+  Add such a column in two generated steps: first without `.references()`,
+  then with it, which makes drizzle-kit rebuild the table and keep the delete
+  rule (0011 + 0012). The migration tests check the resulting
+  `pragma_foreign_key_list`.
 - UI components in `src/ui/` must pass `.claude/rules/mobile.md`; the progress
-  bar is Radix `@radix-ui/react-progress`, the menus Radix dropdown-menu.
+  bar is Radix `@radix-ui/react-progress`, the menus Radix dropdown-menu, the
+  task checkbox Radix checkbox, the member picker Radix radio-group, the due
+  shortcuts Radix toggle-group. Task actions live in the detail drawer (tap a
+  row), not in a per-row menu. The edit form freezes its comparison baseline
+  when it opens: the project refetches every 20 s, and diffing against the
+  live task would send untouched fields back and revert another member's
+  change.

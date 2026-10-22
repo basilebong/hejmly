@@ -30,6 +30,10 @@ export const todoTasks = sqliteTable(
     title: text("title").notNull(),
     notes: text("notes"),
     statusJson: text("status_json").notNull(),
+    dueOn: text("due_on"),
+    assigneeUserId: text("assignee_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     addedByUserId: text("added_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

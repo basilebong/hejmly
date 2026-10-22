@@ -104,7 +104,7 @@ const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<voi
           assistants: { service: createAssistantsService(db) },
           grocery: { service: createGroceryService(db), cleanup: noopCleanup },
           recipes: { service: createRecipeService(db) },
-          todo: { service: createTodoService(db) },
+          todo: { service: createTodoService(db, { isMember: () => true }) },
         });
 
         await run({ baseURL, cookie, userId: user.id, db });

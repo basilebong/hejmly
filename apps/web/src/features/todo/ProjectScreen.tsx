@@ -18,6 +18,7 @@ import {
   Fab,
   ProjectActionsMenu,
   ProjectHeader,
+  TaskDetail,
   TaskList,
   type TaskRowHandlers,
   TasksSkeleton,
@@ -25,22 +26,31 @@ import {
 import { ArrowLeftIcon, ListChecksIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { type ReactElement, type ReactNode, useEffect, useState } from "react";
+import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { match } from "ts-pattern";
 import * as v from "valibot";
 
 import { BottomNav } from "@/components/BottomNav";
 import { ConfirmDrawer } from "./ConfirmDrawer.tsx";
-import { isMissing, projectDetailQuery, projectMutations, removeProjectMutation } from "./cache.ts";
+import {
+  isMissing,
+  membersQuery,
+  projectDetailQuery,
+  projectMutations,
+  removeProjectMutation,
+} from "./cache.ts";
+import { DetailDrawer } from "./DetailDrawer.tsx";
 import { useTodoCacheEnv } from "./env.ts";
 import { FormDrawer } from "./FormDrawer.tsx";
 import { createTaskKey, projectQueryKey } from "./keys.ts";
 import { useLocalRowStates } from "./mutation-state.ts";
+import { useToday } from "./use-today.ts";
 
 type DrawerState =
   | { kind: "none" }
   | { kind: "add_task" }
+  | { kind: "task"; id: TaskId }
   | { kind: "edit_task"; id: TaskId }
   | { kind: "remove_task"; id: TaskId }
   | { kind: "edit_project" }
@@ -120,7 +130,30 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const localStates = useLocalRowStates(createTaskKey(id));
 
   const detail = useQuery(projectDetailQuery(env, id));
-  const mutations = projectMutations(env, id, () => setDrawer(DRAWER_NONE));
+  const membersResult = useQuery(membersQuery(env));
+  const members = membersResult.data ?? [];
+  const me = env.author();
+  const meId = me.kind === "user" ? me.id : null;
+  const today = useToday();
+  const opener = useRef<HTMLElement | null>(null);
+  const fab = useRef<HTMLButtonElement | null>(null);
+  const drawerNow = useRef(drawer);
+  useEffect(() => {
+    drawerNow.current = drawer;
+  }, [drawer]);
+  const restoreFocus = (): void => {
+    if (drawerNow.current.kind !== "none") return;
+    if (opener.current?.isConnected) opener.current.focus();
+    else fab.current?.focus();
+  };
+  const neighbourOf = (row: HTMLElement | null): HTMLElement | null => {
+    const item = row?.closest("li");
+    const next = item?.nextElementSibling ?? item?.previousElementSibling;
+    return next?.querySelector<HTMLElement>("[data-task-open]") ?? null;
+  };
+  const backToTask = (current: DrawerState): DrawerState =>
+    current.kind === "edit_task" ? { kind: "task", id: current.id } : DRAWER_NONE;
+  const mutations = projectMutations(env, id, () => setDrawer(backToTask));
   const create = useMutation(mutations.createTask);
   const toggle = useMutation(mutations.toggleTask);
   const edit = useMutation(mutations.editTask);
@@ -139,7 +172,13 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const tasks = detail.data?.tasks ?? [];
 
   useEffect(() => {
-    if (drawer.kind !== "edit_task" && drawer.kind !== "remove_task") return;
+    if (membersResult.isError) toast.error("Couldn't load household members");
+  }, [membersResult.isError]);
+
+  useEffect(() => {
+    if (drawer.kind !== "task" && drawer.kind !== "edit_task" && drawer.kind !== "remove_task") {
+      return;
+    }
     if (detail.data === undefined) return;
     if (detail.data.tasks.some((t) => t.id === drawer.id)) return;
     setDrawer(DRAWER_NONE);
@@ -171,49 +210,46 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const { project } = detail.data;
 
   const handlersFor = (taskId: TaskId): TaskRowHandlers => ({
+    onOpen: (trigger) => {
+      if (isLocalId(taskId)) return;
+      opener.current = trigger;
+      setDrawer({ kind: "task", id: taskId });
+    },
     onToggle: (done: boolean) => {
       if (!isLocalId(taskId)) toggle.mutate({ taskId, done });
     },
     onRetry: () => {
       const task = tasks.find((t) => t.id === taskId);
       if (task === undefined || !isLocalId(taskId)) return;
-      const input: CreateTaskInput =
-        task.notes === null ? { title: task.title } : { title: task.title, notes: task.notes };
+      const input: CreateTaskInput = {
+        title: task.title,
+        ...(task.notes === null ? {} : { notes: task.notes }),
+        ...(task.dueOn === null ? {} : { dueOn: task.dueOn }),
+        ...(task.assignee === null ? {} : { assigneeId: task.assignee.id }),
+      };
       create.mutate({ input, tempId: taskId });
     },
     onDiscard: () => {
       if (isLocalId(taskId)) discardLocalTask(taskId);
     },
-    onEdit: () => {
-      if (!isLocalId(taskId)) setDrawer({ kind: "edit_task", id: taskId });
-    },
-    onRemove: () => {
-      if (!isLocalId(taskId)) setDrawer({ kind: "remove_task", id: taskId });
-    },
   });
 
-  const editingTask = match(drawer)
-    .with({ kind: "edit_task" }, ({ id: taskId }) => tasks.find((t) => t.id === taskId) ?? null)
-    .with(
-      { kind: "none" },
-      { kind: "add_task" },
-      { kind: "remove_task" },
-      { kind: "edit_project" },
-      { kind: "remove_project" },
-      () => null,
-    )
-    .exhaustive();
-  const removingTask = match(drawer)
-    .with({ kind: "remove_task" }, ({ id: taskId }) => tasks.find((t) => t.id === taskId) ?? null)
-    .with(
-      { kind: "none" },
-      { kind: "add_task" },
-      { kind: "edit_task" },
-      { kind: "edit_project" },
-      { kind: "remove_project" },
-      () => null,
-    )
-    .exhaustive();
+  const taskIn = (kind: "task" | "edit_task" | "remove_task") =>
+    match(drawer)
+      .with({ kind: "task" }, { kind: "edit_task" }, { kind: "remove_task" }, (d) =>
+        d.kind === kind ? (tasks.find((t) => t.id === d.id) ?? null) : null,
+      )
+      .with(
+        { kind: "none" },
+        { kind: "add_task" },
+        { kind: "edit_project" },
+        { kind: "remove_project" },
+        () => null,
+      )
+      .exhaustive();
+  const viewingTask = taskIn("task");
+  const editingTask = taskIn("edit_task");
+  const removingTask = taskIn("remove_task");
 
   return (
     <Shell>
@@ -225,8 +261,14 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         trailing={
           <ProjectActionsMenu
             projectName={project.name}
-            onEdit={() => setDrawer({ kind: "edit_project" })}
-            onRemove={() => setDrawer({ kind: "remove_project" })}
+            onEdit={(trigger) => {
+              opener.current = trigger;
+              setDrawer({ kind: "edit_project" });
+            }}
+            onRemove={(trigger) => {
+              opener.current = trigger;
+              setDrawer({ kind: "remove_project" });
+            }}
           />
         }
       />
@@ -235,19 +277,31 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       ) : (
         <TaskList
           tasks={tasks}
+          today={today}
           syncStateOf={(taskId) => syncStateOf(taskId, localStates)}
           handlersFor={handlersFor}
         />
       )}
-      <Fab onClick={() => setDrawer({ kind: "add_task" })} label="Add task" />
+      <Fab
+        ref={fab}
+        onClick={(e) => {
+          opener.current = e.currentTarget;
+          setDrawer({ kind: "add_task" });
+        }}
+        label="Add task"
+      />
 
       <FormDrawer
         open={drawer.kind === "add_task"}
-        title="Add a task"
-        description="Describe the task, optionally add notes."
+        title="Add task"
+        description="Due date, assignee and notes are optional."
         onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
       >
         <AddTaskForm
+          members={members}
+          meId={meId}
+          today={today}
           onSubmit={(input) => {
             create.mutate({ input, tempId: parseTaskId(localIdSeed()) });
             setDrawer(DRAWER_NONE);
@@ -256,17 +310,45 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         />
       </FormDrawer>
 
+      <DetailDrawer
+        open={viewingTask !== null}
+        description="Task details"
+        onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
+      >
+        {(title) =>
+          viewingTask !== null && (
+            <TaskDetail
+              task={viewingTask}
+              projectName={project.name}
+              today={today}
+              members={members}
+              titleRef={title.ref}
+              renderTitle={title.render}
+              onToggle={(done) => toggle.mutate({ taskId: viewingTask.id, done })}
+              onEdit={() => setDrawer({ kind: "edit_task", id: viewingTask.id })}
+              onRemove={() => setDrawer({ kind: "remove_task", id: viewingTask.id })}
+              onClose={() => setDrawer(DRAWER_NONE)}
+            />
+          )
+        }
+      </DetailDrawer>
+
       <FormDrawer
         open={editingTask !== null}
         title="Edit task"
-        description="Change the task or its notes."
-        onClose={() => setDrawer(DRAWER_NONE)}
+        description="Change the title, due date, assignee or notes."
+        onClose={() => setDrawer(backToTask)}
       >
         {editingTask !== null && (
           <EditTaskForm
+            key={editingTask.id}
             initial={editingTask}
+            members={members}
+            meId={meId}
+            today={today}
             onSubmit={(input) => edit.mutate({ taskId: editingTask.id, input })}
-            onCancel={() => setDrawer(DRAWER_NONE)}
+            onCancel={() => setDrawer(backToTask)}
           />
         )}
       </FormDrawer>
@@ -276,6 +358,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         title="Edit project"
         description="Rename the project or change its description."
         onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
       >
         <EditProjectForm
           initial={project}
@@ -286,14 +369,18 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
 
       <ConfirmDrawer
         open={removingTask !== null}
-        title={`Remove ${removingTask?.title ?? "task"}?`}
-        description="This can't be undone — the task will be gone for everyone in the household."
-        confirmLabel="Remove"
+        title="Delete this task?"
+        description={`“${removingTask?.title ?? ""}” will be deleted for everyone in the household. This can't be undone.`}
+        confirmLabel="Delete task"
         onConfirm={() => {
+          opener.current = neighbourOf(opener.current);
           if (removingTask !== null) removeTask.mutate(removingTask.id);
           setDrawer(DRAWER_NONE);
         }}
-        onClose={() => setDrawer(DRAWER_NONE)}
+        onClose={() =>
+          setDrawer(removingTask === null ? DRAWER_NONE : { kind: "task", id: removingTask.id })
+        }
+        onClosed={restoreFocus}
       />
 
       <ConfirmDrawer
@@ -307,6 +394,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
           void navigate({ to: "/todo" });
         }}
         onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
       />
     </Shell>
   );

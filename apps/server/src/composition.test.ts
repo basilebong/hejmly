@@ -45,7 +45,7 @@ const appFor = (auth: Auth, db: Db, baseURL = "http://localhost:5173") =>
     assistants: { service: createAssistantsService(db) },
     grocery: groceryFor(db),
     recipes: { service: createRecipeService(db) },
-    todo: { service: createTodoService(db) },
+    todo: { service: createTodoService(db, { isMember: () => true }) },
     staticRoot: distRoot,
   });
 
