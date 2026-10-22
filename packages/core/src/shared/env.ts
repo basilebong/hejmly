@@ -18,6 +18,20 @@ const urlSchema = v.pipe(v.string(), v.url());
 const nonEmptySchema = v.pipe(v.string(), v.minLength(1));
 const secretSchema = v.pipe(v.string(), v.minLength(32));
 
+const isTimeZone = (raw: string): boolean => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: raw });
+    return true;
+  } catch {
+    return false;
+  }
+};
+const timeZoneSchema = v.pipe(
+  v.string(),
+  v.minLength(1),
+  v.check(isTimeZone, "Use an IANA time zone like Europe/Berlin"),
+);
+
 const envSchema = v.object({
   PORT: v.optional(portSchema, "3000"),
   CI: v.optional(flagSchema, ""),
@@ -44,6 +58,7 @@ const runtimeEnvSchema = v.object({
   GOOGLE_SECRET: nonEmptySchema,
   DATABASE_PATH: nonEmptySchema,
   HEJMLY_ALLOWED_EMAILS: nonEmptySchema,
+  HEJMLY_TIMEZONE: v.optional(timeZoneSchema, "UTC"),
   MCP_HOST: v.optional(nonEmptySchema),
 });
 

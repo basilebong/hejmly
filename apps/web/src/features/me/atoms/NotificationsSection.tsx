@@ -1,4 +1,5 @@
-import { BasketIcon, BellIcon } from "@phosphor-icons/react";
+import type { PushTopic } from "@hejmly/core/shared";
+import { BasketIcon, BellIcon, CheckSquareIcon } from "@phosphor-icons/react";
 import { type ReactElement, type ReactNode, useEffect, useId, useRef } from "react";
 
 import { Switch } from "@/components/ui/switch";
@@ -83,9 +84,64 @@ const actionFor = (action: HintAction | undefined, retry: () => void): Action | 
     : { label: "Reload", pending: action.pending, onClick: () => window.location.reload() };
 };
 
+type TopicRowProps = {
+  notifications: Notifications;
+  topic: PushTopic;
+  icon: ReactNode;
+  title: string;
+  description: string;
+  reportsLoadError: boolean;
+  noteId: string;
+};
+
+const TopicRow = ({
+  notifications,
+  topic,
+  icon,
+  title,
+  description,
+  reportsLoadError,
+  noteId,
+}: TopicRowProps): ReactElement | null => {
+  const { preferences } = notifications;
+  if (preferences.kind === "error" && !reportsLoadError) return null;
+  return (
+    <Row
+      icon={icon}
+      title={preferences.kind === "error" ? "Grocery and tasks" : title}
+      description={
+        preferences.kind === "error" ? "Couldn't load your notification settings." : description
+      }
+      action={
+        preferences.kind === "error"
+          ? {
+              label: "Try again",
+              pending: preferences.retrying,
+              onClick: notifications.retryPreferences,
+            }
+          : undefined
+      }
+      control={(ids) =>
+        preferences.kind === "ready" ? (
+          <Switch
+            id={ids.control}
+            aria-labelledby={ids.title}
+            aria-describedby={`${ids.hint} ${noteId}`}
+            checked={preferences.value[topic]}
+            onCheckedChange={(on) => notifications.setPreference({ [topic]: on })}
+          />
+        ) : preferences.kind === "loading" ? (
+          <SwitchSkeleton />
+        ) : null
+      }
+    />
+  );
+};
+
 export const NotificationsSection = ({ notifications }: { notifications: Notifications }) => {
-  const { state, device, preferences } = notifications;
+  const { state, device } = notifications;
   const headingId = useId();
+  const noteId = useId();
   const hint = deviceHint(state, device);
   const busy = device.kind === "turning_on" || device.kind === "turning_off";
   const usable = isDeviceSwitchUsable(state, device);
@@ -114,38 +170,28 @@ export const NotificationsSection = ({ notifications }: { notifications: Notific
             />
           )}
         />
-        <Row
+        <TopicRow
+          notifications={notifications}
+          topic="grocery_added"
           icon={<BasketIcon size={18} />}
           title="Grocery list"
-          description={
-            preferences.kind === "error"
-              ? "Couldn't load this setting."
-              : "When someone adds to the list. Applies to every device where notifications are on."
-          }
-          action={
-            preferences.kind === "error"
-              ? {
-                  label: "Try again",
-                  pending: preferences.retrying,
-                  onClick: notifications.retryPreferences,
-                }
-              : undefined
-          }
-          control={(ids) =>
-            preferences.kind === "ready" ? (
-              <Switch
-                id={ids.control}
-                aria-labelledby={ids.title}
-                aria-describedby={ids.hint}
-                checked={preferences.value.grocery_added}
-                onCheckedChange={(on) => notifications.setPreference({ grocery_added: on })}
-              />
-            ) : preferences.kind === "loading" ? (
-              <SwitchSkeleton />
-            ) : null
-          }
+          description="When someone adds to the list."
+          reportsLoadError
+          noteId={noteId}
+        />
+        <TopicRow
+          notifications={notifications}
+          topic="todo_due"
+          icon={<CheckSquareIcon size={18} />}
+          title="Tasks due"
+          description="At 8 in the morning, when tasks assigned to you are due or overdue."
+          reportsLoadError={false}
+          noteId={noteId}
         />
       </div>
+      <p id={noteId} className="px-5 pt-2 text-slate-600 text-sm leading-snug">
+        Grocery and task settings apply to every device where notifications are on.
+      </p>
     </section>
   );
 };

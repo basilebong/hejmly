@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import * as v from "valibot";
-import { addDays, DueDateSchema, dueLabel, dueState, localDueDate, parseDueDate } from "./due.ts";
+import {
+  addDays,
+  clockInZone,
+  DueDateSchema,
+  dueLabel,
+  dueState,
+  localDueDate,
+  parseDueDate,
+} from "./due.ts";
 
 const d = parseDueDate;
 
@@ -75,5 +83,36 @@ describe("dueLabel", () => {
 
   test("adds the year when it differs", () => {
     expect(label("2027-01-04")).toBe("Mon, 4 Jan 2027");
+  });
+});
+
+describe("clockInZone", () => {
+  test("reads the calendar date and hour of a moment in a time zone", () => {
+    const at = new Date("2026-10-22T06:30:00Z");
+    expect(clockInZone(at, "UTC")).toEqual({ date: d("2026-10-22"), hour: 6 });
+    expect(clockInZone(at, "Europe/Berlin")).toEqual({ date: d("2026-10-22"), hour: 8 });
+    expect(clockInZone(at, "America/Los_Angeles")).toEqual({ date: d("2026-10-21"), hour: 23 });
+  });
+
+  test("crosses midnight into the zone's next day", () => {
+    expect(clockInZone(new Date("2026-10-22T23:30:00Z"), "Europe/Berlin")).toEqual({
+      date: d("2026-10-23"),
+      hour: 1,
+    });
+  });
+
+  test("follows daylight saving time", () => {
+    expect(clockInZone(new Date("2026-10-24T06:30:00Z"), "Europe/Berlin")).toEqual({
+      date: d("2026-10-24"),
+      hour: 8,
+    });
+    expect(clockInZone(new Date("2026-10-25T06:30:00Z"), "Europe/Berlin")).toEqual({
+      date: d("2026-10-25"),
+      hour: 7,
+    });
+  });
+
+  test("midnight is hour 0, not 24", () => {
+    expect(clockInZone(new Date("2026-10-22T22:00:00Z"), "Europe/Berlin").hour).toBe(0);
   });
 });

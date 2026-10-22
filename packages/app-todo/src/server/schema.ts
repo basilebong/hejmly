@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from "@hejmly/core/server/drizzle";
+import { index, integer, primaryKey, sqliteTable, text } from "@hejmly/core/server/drizzle";
 import { users } from "@hejmly/core/server/schema";
 
 export const todoProjects = sqliteTable(
@@ -52,3 +52,15 @@ export type ProjectRow = typeof todoProjects.$inferSelect;
 export type ProjectInsert = typeof todoProjects.$inferInsert;
 export type TaskRow = typeof todoTasks.$inferSelect;
 export type TaskInsert = typeof todoTasks.$inferInsert;
+
+export const todoDueReminders = sqliteTable(
+  "todo_due_reminders",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    sentAt: integer("sent_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.userId, t.day] }) }),
+);

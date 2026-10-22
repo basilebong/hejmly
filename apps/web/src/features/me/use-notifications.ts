@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { match } from "ts-pattern";
 
-import { fetchPushPreferences, mergePreferences, updatePushPreferences } from "@/lib/push-api";
+import {
+  fetchPushPreferences,
+  mergePreferences,
+  rollbackPreferences,
+  updatePushPreferences,
+} from "@/lib/push-api";
 import { type DeviceStatus, readDevice, turnOff, turnOn } from "@/lib/push-device";
 import { type PushState, pushStateOf, readPushEnvironment } from "@/lib/push-state";
 import {
@@ -17,6 +22,7 @@ import {
 
 export const DEVICE_KEY = ["push", "device"] as const;
 export const PREFERENCES_KEY = ["push", "preferences"] as const;
+const SAVE_PREFERENCE_KEY = ["push", "preferences", "save"] as const;
 
 type DeviceRequest = { on: true; permission: Promise<NotificationPermission> } | { on: false };
 
@@ -128,6 +134,7 @@ export const useNotifications = (): Notifications => {
   });
 
   const savePreference = useMutation({
+    mutationKey: SAVE_PREFERENCE_KEY,
     mutationFn: updatePushPreferences,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: PREFERENCES_KEY });
@@ -137,13 +144,20 @@ export const useNotifications = (): Notifications => {
       }
       return { previous };
     },
-    onError: (_error, _input, context) => {
-      if (context?.previous !== undefined) {
-        qc.setQueryData<PushPreferences>(PREFERENCES_KEY, context.previous);
+    onError: (_error, input, context) => {
+      const previous = context?.previous;
+      if (previous !== undefined) {
+        qc.setQueryData<PushPreferences>(PREFERENCES_KEY, (current) =>
+          current === undefined ? previous : rollbackPreferences(current, previous, input),
+        );
       }
       toast.error("Couldn't save that setting");
     },
-    onSuccess: (saved) => qc.setQueryData<PushPreferences>(PREFERENCES_KEY, saved),
+    onSettled: () => {
+      if (qc.isMutating({ mutationKey: SAVE_PREFERENCE_KEY }) === 1) {
+        void qc.invalidateQueries({ queryKey: PREFERENCES_KEY });
+      }
+    },
   });
 
   // A refetch of a query without data resets its status to pending, so isError

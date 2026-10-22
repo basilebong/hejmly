@@ -64,7 +64,7 @@ const viewHint = (view: DeviceView): Hint =>
       text: "On. If nothing shows up, check the notification settings for Hejmly on this device.",
     }))
     .with({ kind: "off" }, () => ({
-      text: "Get notified here when someone adds to the grocery list. Your browser may ask for permission.",
+      text: "Get grocery and task notifications here. Your browser may ask for permission.",
     }))
     .with({ kind: "declined" }, () => ({
       text: "Notifications weren't allowed. Tap the switch to try again. If no prompt appears, allow them in the site or app settings.",

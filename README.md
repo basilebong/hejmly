@@ -159,6 +159,9 @@ GOOGLE_SECRET=<from Google Cloud>
 # Matched case-insensitively after trimming.
 HEJMLY_ALLOWED_EMAILS=basile@example.com,partner@example.com
 
+# Household time zone (IANA). Task reminders go out at 8:00 here. Default UTC.
+HEJMLY_TIMEZONE=Europe/Berlin
+
 # Public Host the MCP endpoint is reached at (DNS-rebinding allowlist). The
 # server also allows the BETTER_AUTH_URL host + localhost:$PORT automatically,
 # so local dev needs no change. In prod set it to your domain.
@@ -250,6 +253,13 @@ Each person turns notifications on per device under **Me → Notifications**;
 the browser then asks for permission. On iPhone and iPad this only works in
 the installed app (Share → Add to Home Screen, iOS 16.4 or later), not in a
 Safari tab.
+
+Two kinds of notifications exist today, each can be turned off under
+**Me → Notifications**:
+
+- **Grocery list**: when someone else adds items.
+- **Tasks due**: at 8 in the morning (in `HEJMLY_TIMEZONE`), one notification
+  to each person with tasks assigned to them that are due today or overdue.
 
 A device's notifications belong to the sign-in that turned them on. Signing
 out, or a session expiring after 30 days without opening Hejmly, turns them

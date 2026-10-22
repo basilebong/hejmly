@@ -1,10 +1,12 @@
 import {
+  PUSH_TOPICS,
   type PushDeviceStatus,
   PushDeviceStatusSchema,
   type PushPreferences,
   type PushPreferencesInput,
   PushPreferencesSchema,
   type PushSubscriptionInput,
+  type PushTopic,
   VapidPublicKeyResponseSchema,
 } from "@hejmly/core/shared";
 import { match, P } from "ts-pattern";
@@ -73,10 +75,20 @@ export const deleteSubscription = async (endpoint: string): Promise<void> => {
   if (!res.ok && res.status !== 404) throw new PushApiError(res.status, await res.text());
 };
 
+const pickPreferences = (choose: (topic: PushTopic) => boolean): PushPreferences =>
+  v.parse(PushPreferencesSchema, Object.fromEntries(PUSH_TOPICS.map((t) => [t, choose(t)])));
+
 export const mergePreferences = (
   current: PushPreferences,
   change: PushPreferencesInput,
-): PushPreferences => ({ grocery_added: change.grocery_added ?? current.grocery_added });
+): PushPreferences => pickPreferences((topic) => change[topic] ?? current[topic]);
+
+export const rollbackPreferences = (
+  current: PushPreferences,
+  previous: PushPreferences,
+  failed: PushPreferencesInput,
+): PushPreferences =>
+  pickPreferences((topic) => (failed[topic] === undefined ? current[topic] : previous[topic]));
 
 export const fetchPushPreferences = async (): Promise<PushPreferences> => {
   const res = await fetch("/api/push/preferences", { credentials: "include" });

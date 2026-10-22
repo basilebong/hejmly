@@ -127,9 +127,10 @@ describe("push routes", () => {
     await withRoutes(async (ctx) => {
       expect(await (await send(ctx, "GET", "/api/push/preferences")).json()).toEqual({
         grocery_added: true,
+        todo_due: true,
       });
       const changed = await send(ctx, "PATCH", "/api/push/preferences", { grocery_added: false });
-      expect(await changed.json()).toEqual({ grocery_added: false });
+      expect(await changed.json()).toEqual({ grocery_added: false, todo_due: true });
       const unknown = await send(ctx, "PATCH", "/api/push/preferences", { lottery: true });
       expect(unknown.status).toBe(400);
     });
