@@ -79,3 +79,22 @@ export const dueLabel = (due: DueDate, today: DueDate, locale?: string): string 
     timeZone: "UTC",
   }).format(at);
 };
+
+export type ZoneClock = { date: DueDate; hour: number };
+
+export const clockInZone = (at: Date, timeZone: string): ZoneClock => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(at);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return {
+    date: parseDueDate(`${part("year")}-${part("month")}-${part("day")}`),
+    hour: Number(part("hour")),
+  };
+};

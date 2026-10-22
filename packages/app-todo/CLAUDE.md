@@ -87,3 +87,9 @@ Exports FOUR subpaths (mirrors `app-grocery`):
   when it opens: the project refetches every 20 s, and diffing against the
   live task would send untouched fields back and revert another member's
   change.
+- Morning reminders (`src/server/due-reminders.ts`): a bunqueue job checks
+  every 15 minutes; from 8:00 in `HEJMLY_TIMEZONE` it sends each member one
+  `todo_due` push listing their open, assigned tasks due today or overdue.
+  `todo_due_reminders` (user, day) is claimed before sending, so restarts and
+  repeated checks never send twice; a refused send releases the claim so the
+  next check retries. It shares the process's single bunqueue `dataPath`.

@@ -62,7 +62,7 @@ export type PushServiceOptions = {
   send: PushSender;
 };
 
-export type PushAudience = { except?: UserId };
+export type PushAudience = { except?: UserId; only?: UserId };
 export type PushOutcome = { sent: number; removed: number; failed: number };
 
 export type PushService = {
@@ -170,7 +170,10 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
   const preferences = async (userId: UserId): Promise<PushPreferences> => {
     const rows = await db.select().from(pushPreferences).where(eq(pushPreferences.userId, userId));
     const chosen = new Map(rows.map((r) => [r.topic, r.enabled]));
-    return { grocery_added: chosen.get("grocery_added") ?? true };
+    return {
+      grocery_added: chosen.get("grocery_added") ?? true,
+      todo_due: chosen.get("todo_due") ?? true,
+    };
   };
 
   const notifyTargets = (topic: PushTopic, audience: PushAudience, now: Date) =>
@@ -195,7 +198,10 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
         and(eq(pushPreferences.userId, pushSubscriptions.userId), eq(pushPreferences.topic, topic)),
       )
       .where(
-        audience.except === undefined ? undefined : ne(pushSubscriptions.userId, audience.except),
+        and(
+          audience.except === undefined ? undefined : ne(pushSubscriptions.userId, audience.except),
+          audience.only === undefined ? undefined : eq(pushSubscriptions.userId, audience.only),
+        ),
       );
 
   const forget = async (id: string, endpoint: string, reason: string, status?: number) => {

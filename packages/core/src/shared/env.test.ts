@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseEnv } from "./env.ts";
+import { parseEnv, parseRuntimeEnv } from "./env.ts";
 
 describe("parseEnv", () => {
   test("applies defaults when env is empty", () => {
@@ -70,5 +70,27 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ MCP_HOST: "" })).toThrow();
     expect(() => parseEnv({ GOOGLE_ID: "" })).toThrow();
     expect(() => parseEnv({ DATABASE_PATH: "" })).toThrow();
+  });
+});
+
+describe("HEJMLY_TIMEZONE", () => {
+  const runtime = {
+    BETTER_AUTH_URL: "https://hejmly.example",
+    BETTER_AUTH_SECRET: "x".repeat(32),
+    GOOGLE_ID: "id",
+    GOOGLE_SECRET: "secret",
+    DATABASE_PATH: "/data/app.db",
+    HEJMLY_ALLOWED_EMAILS: "a@example.com",
+  };
+
+  test("defaults to UTC", () => {
+    expect(parseRuntimeEnv(runtime).HEJMLY_TIMEZONE).toBe("UTC");
+  });
+
+  test("accepts an IANA zone and refuses a made-up one", () => {
+    expect(parseRuntimeEnv({ ...runtime, HEJMLY_TIMEZONE: "Europe/Berlin" }).HEJMLY_TIMEZONE).toBe(
+      "Europe/Berlin",
+    );
+    expect(() => parseRuntimeEnv({ ...runtime, HEJMLY_TIMEZONE: "Mars/Olympus" })).toThrow();
   });
 });

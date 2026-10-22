@@ -257,15 +257,32 @@ describe("push service", () => {
     });
   });
 
-  test("preferences default to on and are stored per person", async () => {
+  test("preferences default to on and are stored per person and topic", async () => {
     await withPush(async ({ service }) => {
-      expect(await service.preferences(ANNA)).toEqual({ grocery_added: true });
+      expect(await service.preferences(ANNA)).toEqual({ grocery_added: true, todo_due: true });
       expect(await service.updatePreferences(ANNA, { grocery_added: false })).toEqual({
         kind: "ok",
-        value: { grocery_added: false },
+        value: { grocery_added: false, todo_due: true },
       });
-      expect(await service.preferences(ANNA)).toEqual({ grocery_added: false });
-      expect(await service.preferences(BASILE)).toEqual({ grocery_added: true });
+      expect(await service.preferences(ANNA)).toEqual({ grocery_added: false, todo_due: true });
+      expect(await service.preferences(BASILE)).toEqual({ grocery_added: true, todo_due: true });
+    });
+  });
+
+  test("a message can be addressed to one person only", async () => {
+    await withPush(async ({ service, sent }) => {
+      await subscribe(service, ANNA, endpoint("anna"));
+      await subscribe(service, BASILE, endpoint("basile"));
+      expect(await service.notify("todo_due", { only: BASILE }, message)).toEqual({
+        kind: "ok",
+        value: { sent: 1, removed: 0, failed: 0 },
+      });
+      expect(sent.map((r) => r.endpoint)).toEqual([endpoint("basile")]);
+      await service.updatePreferences(BASILE, { todo_due: false });
+      expect(await service.notify("todo_due", { only: BASILE }, message)).toEqual({
+        kind: "ok",
+        value: { sent: 0, removed: 0, failed: 0 },
+      });
     });
   });
 

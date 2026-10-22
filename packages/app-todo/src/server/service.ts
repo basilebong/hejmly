@@ -1,5 +1,15 @@
 import type { Db } from "@hejmly/core/server";
-import { alias, asc, desc, eq, sql } from "@hejmly/core/server/drizzle";
+import {
+  alias,
+  and,
+  asc,
+  desc,
+  eq,
+  isNotNull,
+  isNull,
+  lte,
+  sql,
+} from "@hejmly/core/server/drizzle";
 import { users } from "@hejmly/core/server/schema";
 import { err, isErr, ok, type Result, type UserId } from "@hejmly/core/shared";
 import { monotonicFactory } from "ulid";
@@ -7,6 +17,7 @@ import {
   blankToNull,
   type CreateProjectInput,
   type CreateTaskInput,
+  type DueDate,
   isTaskPatch,
   type Project,
   type ProjectId,
@@ -22,7 +33,7 @@ import {
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "../shared/index.ts";
-import { type TaskInsert, todoProjects, todoTasks } from "./schema.ts";
+import { type TaskInsert, todoDueReminders, todoProjects, todoTasks } from "./schema.ts";
 import { type AuthorRow, rowToProject, rowToTask, serializeStatus, toMember } from "./serialize.ts";
 
 export type TodoService = {
@@ -41,7 +52,12 @@ export type TodoService = {
   completeTask(id: TaskId, by: UserId): Promise<Result<Task, TodoError>>;
   reopenTask(id: TaskId): Promise<Result<Task, TodoError>>;
   removeTask(id: TaskId): Promise<Result<{ id: TaskId }, TodoError>>;
+  listDueByAssignee(today: DueDate): Promise<DueForAssignee[]>;
+  claimDueReminder(userId: UserId, day: DueDate): Promise<boolean>;
+  releaseDueReminder(userId: UserId, day: DueDate): Promise<void>;
 };
+
+export type DueForAssignee = { assignee: TodoMember; tasks: Task[] };
 
 export type TodoServiceOptions = { isMember: (email: string | null) => boolean };
 
@@ -311,6 +327,46 @@ export const createTodoService = (db: Db, { isMember }: TodoServiceOptions): Tod
       const row = deleted[0];
       if (row === undefined) return err({ kind: "task_not_found", id });
       return ok({ id: parseTaskId(row.id) });
+    },
+
+    async claimDueReminder(userId, day) {
+      const claimed = await db
+        .insert(todoDueReminders)
+        .values({ userId, day, sentAt: new Date() })
+        .onConflictDoNothing()
+        .returning({ userId: todoDueReminders.userId });
+      return claimed.length > 0;
+    },
+
+    async releaseDueReminder(userId, day) {
+      await db
+        .delete(todoDueReminders)
+        .where(and(eq(todoDueReminders.userId, userId), eq(todoDueReminders.day, day)));
+    },
+
+    async listDueByAssignee(today) {
+      const rows = await selectTasks()
+        .where(
+          and(
+            isNull(todoTasks.completedAt),
+            isNotNull(todoTasks.assigneeUserId),
+            isNotNull(todoTasks.dueOn),
+            lte(todoTasks.dueOn, today),
+          ),
+        )
+        .orderBy(asc(todoTasks.dueOn), asc(todoTasks.createdAt), asc(todoTasks.id));
+      const byAssignee = new Map<UserId, DueForAssignee>();
+      for (const row of rows) {
+        if (row.assignee === null || !isMember(row.assignee.email)) continue;
+        const task = toTask(row);
+        if (task.assignee === null) continue;
+        const entry = byAssignee.get(task.assignee.id) ?? { assignee: task.assignee, tasks: [] };
+        entry.tasks.push(task);
+        byAssignee.set(task.assignee.id, entry);
+      }
+      return [...byAssignee.values()].sort((a, b) =>
+        a.assignee.name.localeCompare(b.assignee.name),
+      );
     },
   };
 };

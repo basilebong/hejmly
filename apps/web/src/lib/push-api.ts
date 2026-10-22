@@ -76,7 +76,10 @@ export const deleteSubscription = async (endpoint: string): Promise<void> => {
 export const mergePreferences = (
   current: PushPreferences,
   change: PushPreferencesInput,
-): PushPreferences => ({ grocery_added: change.grocery_added ?? current.grocery_added });
+): PushPreferences => ({
+  grocery_added: change.grocery_added ?? current.grocery_added,
+  todo_due: change.todo_due ?? current.todo_due,
+});
 
 export const fetchPushPreferences = async (): Promise<PushPreferences> => {
   const res = await fetch("/api/push/preferences", { credentials: "include" });

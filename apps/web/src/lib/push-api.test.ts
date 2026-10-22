@@ -3,10 +3,16 @@ import { mergePreferences, PushApiError, requestFailureOf } from "./push-api.ts"
 
 describe("mergePreferences", () => {
   test("changes only the topics in the change", () => {
-    expect(mergePreferences({ grocery_added: true }, { grocery_added: false })).toEqual({
+    const all = { grocery_added: true, todo_due: true };
+    expect(mergePreferences(all, { grocery_added: false })).toEqual({
       grocery_added: false,
+      todo_due: true,
     });
-    expect(mergePreferences({ grocery_added: false }, {})).toEqual({ grocery_added: false });
+    expect(mergePreferences(all, { todo_due: false })).toEqual({
+      grocery_added: true,
+      todo_due: false,
+    });
+    expect(mergePreferences(all, {})).toEqual(all);
   });
 });
 

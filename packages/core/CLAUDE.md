@@ -38,8 +38,10 @@ Platform plumbing. Two subpath exports:
     5xx are transient. Storage errors are caught in the service and logged
     without the SQL parameters (they hold the endpoint and keys).
   - `notify` targets only members (`isMember`, i.e. the allowlist), never the
-    actor, and honours per-person topic preferences (default on). Apps call
-    `notify`; they never read subscriptions themselves.
+    `except` person, only the `only` person when given, and honours
+    per-person topic preferences (default on). Topics live in `PUSH_TOPICS`;
+    a new topic also needs a row on the Me screen. Apps call `notify`; they
+    never read subscriptions themselves.
   - `PushMessage.url` must be a same-origin path; `tag` doubles as the RFC
     8030 `Topic`, so it is limited to `[A-Za-z0-9_-]{1,32}`.
 

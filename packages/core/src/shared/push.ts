@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-export const PUSH_TOPICS = ["grocery_added"] as const;
+export const PUSH_TOPICS = ["grocery_added", "todo_due"] as const;
 export const PushTopicSchema = v.picklist(PUSH_TOPICS);
 export type PushTopic = v.InferOutput<typeof PushTopicSchema>;
 
@@ -23,11 +23,15 @@ export const PushEndpointInputSchema = v.object({
 export const PushDeviceStatusSchema = v.object({ registered: v.boolean() });
 export type PushDeviceStatus = v.InferOutput<typeof PushDeviceStatusSchema>;
 
-export const PushPreferencesSchema = v.strictObject({ grocery_added: v.boolean() });
+export const PushPreferencesSchema = v.strictObject({
+  grocery_added: v.boolean(),
+  todo_due: v.boolean(),
+});
 export type PushPreferences = v.InferOutput<typeof PushPreferencesSchema>;
 
 export const PushPreferencesInputSchema = v.strictObject({
   grocery_added: v.optional(v.boolean()),
+  todo_due: v.optional(v.boolean()),
 });
 export type PushPreferencesInput = v.InferOutput<typeof PushPreferencesInputSchema>;
 

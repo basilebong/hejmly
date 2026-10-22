@@ -5,7 +5,7 @@ import {
   createGroceryService,
 } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
-import { createTodoService } from "@hejmly/app-todo/server";
+import { createDueReminders, createTodoService } from "@hejmly/app-todo/server";
 import {
   createAssistantsService,
   createAuditRecorder,
@@ -63,6 +63,12 @@ const announcer = createGroceryAnnouncer({
   push: pushService,
   dataPath: jobsDataPath,
 });
+const dueReminders = createDueReminders({
+  service: todoService,
+  push: pushService,
+  timeZone: env.HEJMLY_TIMEZONE,
+  dataPath: jobsDataPath,
+});
 
 const app = createApp({
   auth,
@@ -86,6 +92,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   if (shuttingDown) return;
   shuttingDown = true;
   console.info(`Hejmly server received ${signal}, shutting down`);
+  await dueReminders.close();
   await announcer.close();
   await cleanup.close();
   await server.stop();
