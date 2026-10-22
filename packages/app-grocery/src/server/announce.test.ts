@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { describeAdditions, windowOf } from "./announce.ts";
+import { parseUserId } from "@hejmly/core/shared";
+import { announcementTag, describeAdditions, windowOf } from "./announce.ts";
 
 describe("describeAdditions", () => {
   test("names up to three items, then counts the rest", () => {
@@ -25,5 +26,30 @@ describe("windowOf", () => {
     expect(windowOf(0, 60_000)).toEqual({ index: 0, start: 0, end: 60_000 });
     expect(windowOf(59_999, 60_000)).toEqual({ index: 0, start: 0, end: 60_000 });
     expect(windowOf(60_000, 60_000)).toEqual({ index: 1, start: 60_000, end: 120_000 });
+  });
+});
+
+describe("announcementTag", () => {
+  const anna = parseUserId("u_anna");
+  const basile = parseUserId("u_basile");
+
+  test("is a valid push Topic, stable for one person and window", async () => {
+    const tag = await announcementTag(anna, 29_000_000);
+    expect(tag).toMatch(/^[A-Za-z0-9_-]{1,32}$/);
+    expect(await announcementTag(anna, 29_000_000)).toBe(tag);
+  });
+
+  test("differs between people and between windows, so one never replaces another", async () => {
+    const tags = new Set([
+      await announcementTag(anna, 29_000_000),
+      await announcementTag(basile, 29_000_000),
+      await announcementTag(anna, 29_000_001),
+    ]);
+    expect(tags.size).toBe(3);
+  });
+
+  test("fits a long user id and a short test window's large index", async () => {
+    const long = parseUserId("x".repeat(64));
+    expect(await announcementTag(long, 9_999_999_999)).toMatch(/^[A-Za-z0-9_-]{1,32}$/);
   });
 });

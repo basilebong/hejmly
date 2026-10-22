@@ -60,6 +60,7 @@ describe("push routes", () => {
       for (const [method, path] of [
         ["GET", "/api/push/vapid-public-key"],
         ["POST", "/api/push/subscriptions"],
+        ["POST", "/api/push/subscriptions/check"],
         ["DELETE", "/api/push/subscriptions"],
         ["GET", "/api/push/preferences"],
         ["PATCH", "/api/push/preferences"],
@@ -89,10 +90,20 @@ describe("push routes", () => {
         device.subscription(ENDPOINT),
       );
       expect(created.status).toBe(201);
+      const check = await send(ctx, "POST", "/api/push/subscriptions/check", {
+        endpoint: ENDPOINT,
+      });
+      expect(await check.json()).toEqual({ registered: true });
       const gone = await send(ctx, "DELETE", "/api/push/subscriptions", { endpoint: ENDPOINT });
       expect(gone.status).toBe(200);
       const again = await send(ctx, "DELETE", "/api/push/subscriptions", { endpoint: ENDPOINT });
       expect(again.status).toBe(404);
+      const after = await send(ctx, "POST", "/api/push/subscriptions/check", {
+        endpoint: ENDPOINT,
+      });
+      expect(await after.json()).toEqual({ registered: false });
+      const malformed = await send(ctx, "POST", "/api/push/subscriptions/check", {});
+      expect(malformed.status).toBe(400);
     });
   });
 

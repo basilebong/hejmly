@@ -10,6 +10,7 @@ import {
   precacheAndRoute,
 } from "workbox-precaching";
 import { NavigationRoute, registerRoute } from "workbox-routing";
+import type { OpenUrlMessage } from "./lib/sw-messages.ts";
 
 declare let self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: (PrecacheEntry | string)[];
@@ -33,7 +34,8 @@ for (const method of MUTATION_METHODS) {
     maxRetentionTime: 24 * 60,
   });
   registerRoute(
-    ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/api/"),
+    ({ url, sameOrigin }) =>
+      sameOrigin && url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/push/"),
     async ({ request }) => {
       const original = request.clone();
       try {
@@ -76,17 +78,20 @@ const ClickDataSchema = v.object({ url: PushMessageSchema.entries.url });
 
 const openApp = async (path: string): Promise<void> => {
   const target = new URL(path, self.location.origin).href;
-  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
-  if (open !== undefined) {
-    try {
-      await open.focus();
-      await open.navigate(target);
-      return;
-    } catch {
-      await self.clients.openWindow(target);
-      return;
-    }
+  const controlled = await self.clients.matchAll({ type: "window" });
+  const own = controlled.find((client) => new URL(client.url).origin === self.location.origin);
+  if (own !== undefined) {
+    await own.focus();
+    await own.navigate(target);
+    return;
+  }
+  const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const uncontrolled = all.find((client) => new URL(client.url).origin === self.location.origin);
+  if (uncontrolled !== undefined) {
+    const message: OpenUrlMessage = { kind: "open_url", url: path };
+    uncontrolled.postMessage(message);
+    await uncontrolled.focus();
+    return;
   }
   await self.clients.openWindow(target);
 };

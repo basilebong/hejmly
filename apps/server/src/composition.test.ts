@@ -144,6 +144,8 @@ describe("composition", () => {
       { path: "/api/todo/projects", body: { name: "Forged" } },
       { path: "/api/grocery/items", body: { name: "Forged" } },
       { path: "/api/recipes", body: { title: "Forged" } },
+      { path: "/api/push/subscriptions", body: { endpoint: "https://fcm.googleapis.com/x" } },
+      { path: "/api/push/subscriptions/check", body: { endpoint: "https://fcm.googleapis.com/x" } },
     ];
 
     test("a form-style POST from another site is refused on every app's create route", async () => {
@@ -198,6 +200,16 @@ describe("composition", () => {
           expect(bodilessFromApp.status).toBe(404);
         },
       );
+    });
+  });
+
+  test("push settings need a session", async () => {
+    await withTestAuth({}, async ({ auth, db }) => {
+      const app = appFor(auth, db);
+      for (const path of ["/api/push/vapid-public-key", "/api/push/preferences"]) {
+        const res = await app.request(path);
+        expect({ path, status: res.status }).toEqual({ path, status: 401 });
+      }
     });
   });
 

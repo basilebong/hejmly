@@ -1,10 +1,13 @@
 import {
+  type PushDeviceStatus,
+  PushDeviceStatusSchema,
   type PushPreferences,
   type PushPreferencesInput,
   PushPreferencesSchema,
   type PushSubscriptionInput,
   VapidPublicKeyResponseSchema,
 } from "@hejmly/core/shared";
+import { match, P } from "ts-pattern";
 import * as v from "valibot";
 
 export class PushApiError extends Error {
@@ -16,6 +19,26 @@ export class PushApiError extends Error {
     this.status = status;
   }
 }
+
+export type PushFailure =
+  | { kind: "offline" }
+  | { kind: "server" }
+  | { kind: "browser" }
+  | { kind: "too_many_devices" };
+
+export const requestFailureOf = (error: unknown, online: boolean): PushFailure => {
+  if (!online) return { kind: "offline" };
+  return match(error)
+    .returnType<PushFailure>()
+    .with(P.instanceOf(PushApiError), (e) =>
+      e.status === 409
+        ? { kind: "too_many_devices" }
+        : e.status === 422
+          ? { kind: "browser" }
+          : { kind: "server" },
+    )
+    .otherwise(() => ({ kind: "server" }));
+};
 
 const parseJson = async <T>(res: Response, schema: v.GenericSchema<unknown, T>): Promise<T> => {
   if (!res.ok) throw new PushApiError(res.status, await res.text());
@@ -38,6 +61,11 @@ export const fetchVapidPublicKey = async (): Promise<string> => {
 export const saveSubscription = async (subscription: PushSubscriptionInput): Promise<void> => {
   const res = await fetch("/api/push/subscriptions", jsonInit("POST", subscription));
   if (!res.ok) throw new PushApiError(res.status, await res.text());
+};
+
+export const checkSubscription = async (endpoint: string): Promise<PushDeviceStatus> => {
+  const res = await fetch("/api/push/subscriptions/check", jsonInit("POST", { endpoint }));
+  return parseJson(res, PushDeviceStatusSchema);
 };
 
 export const deleteSubscription = async (endpoint: string): Promise<void> => {

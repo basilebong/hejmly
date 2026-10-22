@@ -6,16 +6,20 @@ const EXACT_HOSTS = new Set([
 
 const HOST_SUFFIXES = [".push.apple.com", ".notify.windows.com"];
 
-export const isAllowedPushEndpoint = (raw: string): boolean => {
+const hasEmptyLabel = (host: string): boolean => host.split(".").some((label) => label === "");
+
+export const normalizePushEndpoint = (raw: string): string | null => {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return false;
+    return null;
   }
   if (url.protocol !== "https:" || url.port !== "" || url.username !== "" || url.password !== "") {
-    return false;
+    return null;
   }
   const host = url.hostname;
-  return EXACT_HOSTS.has(host) || HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+  if (hasEmptyLabel(host)) return null;
+  const allowed = EXACT_HOSTS.has(host) || HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+  return allowed ? url.href : null;
 };

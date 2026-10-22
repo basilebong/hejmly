@@ -1,130 +1,122 @@
-import {
-  type PushPreferences,
-  type PushPreferencesInput,
-  PushSubscriptionInputSchema,
-} from "@hejmly/core/shared";
+import type { PushPreferences, PushPreferencesInput } from "@hejmly/core/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { match } from "ts-pattern";
-import * as v from "valibot";
 
+import { fetchPushPreferences, mergePreferences, updatePushPreferences } from "@/lib/push-api";
+import { type DeviceStatus, readDevice, turnOff, turnOn } from "@/lib/push-device";
+import { type PushState, pushStateOf, readPushEnvironment } from "@/lib/push-state";
 import {
-  deleteSubscription,
-  fetchPushPreferences,
-  fetchVapidPublicKey,
-  mergePreferences,
-  saveSubscription,
-  updatePushPreferences,
-} from "@/lib/push-api";
-import {
-  applicationServerKey,
-  type PushState,
-  pushStateOf,
-  readPushEnvironment,
-} from "@/lib/push-state";
+  type DeviceQuery,
+  type DeviceView,
+  deviceViewOf,
+  failureMessage,
+} from "./notification-status";
 
-const DEVICE_KEY = ["push", "device"] as const;
-const PREFERENCES_KEY = ["push", "preferences"] as const;
+export const DEVICE_KEY = ["push", "device"] as const;
+export const PREFERENCES_KEY = ["push", "preferences"] as const;
 
-type DeviceStatus = { worker: boolean; subscribed: boolean };
-
-const registration = async (): Promise<ServiceWorkerRegistration | undefined> =>
-  navigator.serviceWorker.getRegistration();
-
-const serverCopy = (subscription: PushSubscription) =>
-  v.parse(PushSubscriptionInputSchema, subscription.toJSON());
-
-const readDevice = async (): Promise<DeviceStatus> => {
-  const reg = await registration();
-  if (reg === undefined) return { worker: false, subscribed: false };
-  const subscription = await reg.pushManager.getSubscription();
-  if (subscription !== null) await saveSubscription(serverCopy(subscription));
-  return { worker: true, subscribed: subscription !== null };
-};
-
-type DeviceChange =
-  | { kind: "on" }
-  | { kind: "off" }
-  | { kind: "not_allowed" }
-  | { kind: "no_worker" };
-
-const turnOn = async (): Promise<DeviceChange> => {
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return { kind: "not_allowed" };
-  const reg = await registration();
-  if (reg === undefined) return { kind: "no_worker" };
-  const key = await fetchVapidPublicKey();
-  const subscription = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: applicationServerKey(key),
-  });
-  try {
-    await saveSubscription(serverCopy(subscription));
-  } catch (error) {
-    await subscription.unsubscribe();
-    throw error;
-  }
-  return { kind: "on" };
-};
-
-const turnOff = async (): Promise<DeviceChange> => {
-  const reg = await registration();
-  const subscription = await reg?.pushManager.getSubscription();
-  if (subscription === null || subscription === undefined) return { kind: "off" };
-  await deleteSubscription(subscription.endpoint);
-  await subscription.unsubscribe();
-  return { kind: "off" };
-};
+export type PreferencesView =
+  | { kind: "loading" }
+  | { kind: "error" }
+  | { kind: "ready"; value: PushPreferences };
 
 export type Notifications = {
   state: PushState;
-  device: { loading: boolean; worker: boolean; subscribed: boolean; busy: boolean };
+  device: DeviceView;
   setDevice: (on: boolean) => void;
-  preferences: PushPreferences | undefined;
+  retryDevice: () => void;
+  preferences: PreferencesView;
+  retryPreferences: () => void;
   setPreference: (input: PushPreferencesInput) => void;
+};
+
+const usePushState = (): PushState => {
+  const [state, setState] = useState<PushState>(() => pushStateOf(readPushEnvironment()));
+
+  useEffect(() => {
+    const refresh = () => setState(pushStateOf(readPushEnvironment()));
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    let permission: PermissionStatus | undefined;
+    if ("permissions" in navigator) {
+      navigator.permissions
+        .query({ name: "notifications" })
+        .then((status) => {
+          permission = status;
+          status.addEventListener("change", refresh);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      permission?.removeEventListener("change", refresh);
+    };
+  }, []);
+
+  return state;
 };
 
 export const useNotifications = (): Notifications => {
   const qc = useQueryClient();
-  const [state, setState] = useState<PushState>(() => pushStateOf(readPushEnvironment()));
-
-  useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === "visible") setState(pushStateOf(readPushEnvironment()));
-    };
-    document.addEventListener("visibilitychange", refresh);
-    return () => document.removeEventListener("visibilitychange", refresh);
-  }, []);
+  const state = usePushState();
+  const [declined, setDeclined] = useState(false);
 
   const device = useQuery({
     queryKey: DEVICE_KEY,
     queryFn: readDevice,
     enabled: state.kind === "available",
-    staleTime: Number.POSITIVE_INFINITY,
+    meta: { persist: false },
   });
 
   const preferences = useQuery({ queryKey: PREFERENCES_KEY, queryFn: fetchPushPreferences });
 
   const toggleDevice = useMutation({
     mutationFn: (on: boolean) => (on ? turnOn() : turnOff()),
-    onSuccess: (change) => {
-      setState(pushStateOf(readPushEnvironment()));
+    onMutate: async (on) => {
+      setDeclined(false);
+      await qc.cancelQueries({ queryKey: DEVICE_KEY });
+      const previous = qc.getQueryData<DeviceStatus>(DEVICE_KEY);
+      if (!on) qc.setQueryData<DeviceStatus>(DEVICE_KEY, { kind: "off" });
+      return { previous };
+    },
+    onSuccess: (change, on, context) => {
+      const restore = () => {
+        if (context.previous !== undefined) {
+          qc.setQueryData<DeviceStatus>(DEVICE_KEY, context.previous);
+        }
+      };
       match(change)
         .with({ kind: "on" }, () => {
-          qc.setQueryData<DeviceStatus>(DEVICE_KEY, { worker: true, subscribed: true });
+          qc.setQueryData<DeviceStatus>(DEVICE_KEY, { kind: "on" });
           toast.success("Notifications are on for this device");
         })
         .with({ kind: "off" }, () => {
-          qc.setQueryData<DeviceStatus>(DEVICE_KEY, { worker: true, subscribed: false });
+          qc.setQueryData<DeviceStatus>(DEVICE_KEY, { kind: "off" });
         })
-        .with({ kind: "not_allowed" }, () => toast.info("Notifications weren't allowed"))
-        .with({ kind: "no_worker" }, () => toast.error("Reload Hejmly once, then try again"))
+        .with({ kind: "not_allowed" }, () => {
+          setDeclined(true);
+          toast.info("Notifications weren't allowed on this device");
+        })
+        .with({ kind: "no_worker" }, () => {
+          qc.setQueryData<DeviceStatus>(DEVICE_KEY, { kind: "no_worker" });
+        })
+        .with({ kind: "failed" }, ({ failure }) => {
+          restore();
+          toast.error(on ? failureMessage(failure) : "Couldn't turn notifications off. Try again.");
+        })
         .exhaustive();
     },
-    onError: (_error, on) => {
-      setState(pushStateOf(readPushEnvironment()));
+    onError: (_error, on, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData<DeviceStatus>(DEVICE_KEY, context.previous);
+      }
       toast.error(on ? "Couldn't turn notifications on" : "Couldn't turn notifications off");
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: DEVICE_KEY });
     },
   });
@@ -148,16 +140,29 @@ export const useNotifications = (): Notifications => {
     onSuccess: (saved) => qc.setQueryData<PushPreferences>(PREFERENCES_KEY, saved),
   });
 
+  const deviceQuery: DeviceQuery =
+    device.data !== undefined
+      ? { kind: "ready", status: device.data }
+      : device.isError
+        ? { kind: "error" }
+        : { kind: "pending" };
+
+  const busy = toggleDevice.isPending ? (toggleDevice.variables ? "on" : "off") : null;
+
   return {
     state,
-    device: {
-      loading: state.kind === "available" && device.isPending,
-      worker: device.data?.worker ?? false,
-      subscribed: device.data?.subscribed ?? false,
-      busy: toggleDevice.isPending,
+    device: deviceViewOf({ query: deviceQuery, busy, declined }),
+    setDevice: (on) => {
+      if (!toggleDevice.isPending) toggleDevice.mutate(on);
     },
-    setDevice: (on) => toggleDevice.mutate(on),
-    preferences: preferences.data,
+    retryDevice: () => void device.refetch(),
+    preferences:
+      preferences.data !== undefined
+        ? { kind: "ready", value: preferences.data }
+        : preferences.isError
+          ? { kind: "error" }
+          : { kind: "loading" },
+    retryPreferences: () => void preferences.refetch(),
     setPreference: (input) => savePreference.mutate(input),
   };
 };

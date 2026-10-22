@@ -1,6 +1,7 @@
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { createAuthClient } from "better-auth/react";
 
+import { forgetThisDevice } from "@/lib/push-device";
 import { QUERY_CACHE_PERSIST_KEY, queryClient } from "@/lib/query-client";
 
 const baseURL =
@@ -17,6 +18,7 @@ export const signInWithGoogle = (callbackURL = "/"): Promise<unknown> =>
   });
 
 export const signOut = async (): Promise<unknown> => {
+  await forgetThisDevice();
   const result = await authClient.signOut();
   queryClient.clear();
   if (typeof window !== "undefined") {

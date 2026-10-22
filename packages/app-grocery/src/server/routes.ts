@@ -64,7 +64,7 @@ const safely = async (label: string, p: Promise<void>): Promise<void> => {
   try {
     await p;
   } catch (e) {
-    console.error(`grocery cleanup ${label} failed`, e);
+    console.error(`grocery ${label} failed`, e);
   }
 };
 
@@ -100,9 +100,9 @@ export const createGroceryRoutes = (deps: GroceryDeps) =>
         return c.json(e.body, e.status);
       }
       if (parsed.value.purchased) {
-        await safely("schedule", deps.cleanup.schedule(id));
+        await safely("cleanup schedule", deps.cleanup.schedule(id));
       } else {
-        await safely("cancel", deps.cleanup.cancel(id));
+        await safely("cleanup cancel", deps.cleanup.cancel(id));
       }
       return c.json({ item: result.value });
     })
@@ -126,7 +126,7 @@ export const createGroceryRoutes = (deps: GroceryDeps) =>
         const e = handleError(result.error);
         return c.json(e.body, e.status);
       }
-      await safely("cancel", deps.cleanup.cancel(id));
+      await safely("cleanup cancel", deps.cleanup.cancel(id));
       return c.json({ id: result.value.id });
     });
 

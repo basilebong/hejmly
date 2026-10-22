@@ -248,7 +248,12 @@ services (`fcm.googleapis.com`, `updates.push.services.mozilla.com`,
 
 Each person turns notifications on per device under **Me → Notifications**;
 the browser then asks for permission. On iPhone and iPad this only works in
-the installed app (Share → Add to Home Screen), not in a Safari tab.
+the installed app (Share → Add to Home Screen, iOS 16.4 or later), not in a
+Safari tab.
+
+A device's notifications belong to the sign-in that turned them on. Signing
+out, or a session expiring after 30 days without opening Hejmly, turns them
+off on that device; turn them on again after signing back in.
 
 ## Common commands
 

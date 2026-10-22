@@ -16,9 +16,12 @@ export const PushSubscriptionInputSchema = v.object({
 });
 export type PushSubscriptionInput = v.InferOutput<typeof PushSubscriptionInputSchema>;
 
-export const PushUnsubscribeInputSchema = v.object({
+export const PushEndpointInputSchema = v.object({
   endpoint: v.pipe(v.string(), v.maxLength(PUSH_ENDPOINT_MAX)),
 });
+
+export const PushDeviceStatusSchema = v.object({ registered: v.boolean() });
+export type PushDeviceStatus = v.InferOutput<typeof PushDeviceStatusSchema>;
 
 export const PushPreferencesSchema = v.strictObject({ grocery_added: v.boolean() });
 export type PushPreferences = v.InferOutput<typeof PushPreferencesSchema>;

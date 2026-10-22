@@ -3,10 +3,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPushService, type Db, type PushRequest } from "@hejmly/core/server";
-import { users } from "@hejmly/core/server/schema";
+import { sessions, users } from "@hejmly/core/server/schema";
 import { createTestDevice, type TestDevice, withTestAuth } from "@hejmly/core/server/test";
-import { parseUserId } from "@hejmly/core/shared";
+import {
+  type PushMessage,
+  PushMessageSchema,
+  parseSessionId,
+  parseUserId,
+  type UserId,
+} from "@hejmly/core/shared";
 import { shutdownManager } from "bunqueue/client";
+import * as v from "valibot";
 import { createGroceryAnnouncer, type GroceryAnnouncer } from "./announcer.ts";
 import { createCleanupScheduler } from "./cleanup-scheduler.ts";
 import { createGroceryService, type GroceryService } from "./service.ts";
@@ -14,6 +21,7 @@ import { createGroceryService, type GroceryService } from "./service.ts";
 const ANNA = parseUserId("u_anna");
 const BASILE = parseUserId("u_basile");
 const WINDOW_MS = 300;
+const GRACE_MS = 50;
 
 type Ctx = {
   grocery: GroceryService;
@@ -31,7 +39,19 @@ const seed = async (db: Db): Promise<void> => {
     { id: ANNA, name: "Anna", email: "anna@example.com", createdAt: now, updatedAt: now },
     { id: BASILE, name: "Basile", email: "basile@example.com", createdAt: now, updatedAt: now },
   ]);
+  await db.insert(sessions).values(
+    [ANNA, BASILE].map((user) => ({
+      id: `s_${user}`,
+      token: `token-${user}`,
+      userId: user,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+      createdAt: now,
+      updatedAt: now,
+    })),
+  );
 };
+
+const as = (user: UserId) => ({ userId: user, sessionId: parseSessionId(`s_${user}`) });
 
 const withAnnouncer = async (fn: (ctx: Ctx) => Promise<void>): Promise<void> => {
   const dir = mkdtempSync(join(tmpdir(), "hejmly-announce-"));
@@ -49,14 +69,15 @@ const withAnnouncer = async (fn: (ctx: Ctx) => Promise<void>): Promise<void> => 
       });
       const annaPhone = await createTestDevice();
       const basilePhone = await createTestDevice();
-      await push.subscribe(ANNA, annaPhone.subscription(endpointOf("anna")));
-      await push.subscribe(BASILE, basilePhone.subscription(endpointOf("basile")));
+      await push.subscribe(as(ANNA), annaPhone.subscription(endpointOf("anna")));
+      await push.subscribe(as(BASILE), basilePhone.subscription(endpointOf("basile")));
       const grocery = createGroceryService(db);
       const announcer = createGroceryAnnouncer({
         service: grocery,
         push,
         dataPath: join(dir, "announce.db"),
         windowMs: WINDOW_MS,
+        graceMs: GRACE_MS,
       });
       try {
         await fn({ grocery, announcer, sent, annaPhone, basilePhone });
@@ -78,19 +99,19 @@ const add = async (ctx: Ctx, name: string, by: typeof ANNA) => {
 };
 
 const settle = async (ctx: Ctx, expected: number): Promise<void> => {
-  const deadline = Date.now() + WINDOW_MS * 2 + 3000;
+  const deadline = Date.now() + WINDOW_MS * 2 + GRACE_MS + 3000;
   while (ctx.sent.length < expected && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 25));
   }
   await new Promise((r) => setTimeout(r, WINDOW_MS));
 };
 
-const messagesFor = async (ctx: Ctx, who: "anna" | "basile"): Promise<unknown[]> => {
+const messagesFor = async (ctx: Ctx, who: "anna" | "basile"): Promise<PushMessage[]> => {
   const phone = who === "anna" ? ctx.annaPhone : ctx.basilePhone;
   return Promise.all(
     ctx.sent
       .filter((r) => r.endpoint === endpointOf(who))
-      .map(async (r) => JSON.parse(await phone.decrypt(r.body))),
+      .map(async (r) => v.parse(PushMessageSchema, JSON.parse(await phone.decrypt(r.body)))),
   );
 };
 
@@ -108,22 +129,16 @@ describe("grocery announcer", () => {
       await add(ctx, "Coffee", BASILE);
       await settle(ctx, 2);
 
-      expect(await messagesFor(ctx, "basile")).toEqual([
-        {
-          title: "Grocery list",
-          body: "Anna added Milk and Eggs",
-          tag: "grocery-added",
-          url: "/grocery",
-        },
+      const toBasile = await messagesFor(ctx, "basile");
+      const toAnna = await messagesFor(ctx, "anna");
+      const tag = expect.stringMatching(/^grocery-[A-Za-z0-9_-]+$/);
+      expect(toBasile).toEqual([
+        { title: "Grocery list", body: "Anna added Milk and Eggs", tag, url: "/grocery" },
       ]);
-      expect(await messagesFor(ctx, "anna")).toEqual([
-        {
-          title: "Grocery list",
-          body: "Basile added Coffee",
-          tag: "grocery-added",
-          url: "/grocery",
-        },
+      expect(toAnna).toEqual([
+        { title: "Grocery list", body: "Basile added Coffee", tag, url: "/grocery" },
       ]);
+      expect(toBasile[0]?.tag).not.toBe(toAnna[0]?.tag);
     });
   });
 
@@ -159,6 +174,22 @@ describe("grocery announcer", () => {
     });
   });
 
+  test("a late report of an item already announced does not announce the window again", async () => {
+    await withAnnouncer(async (ctx) => {
+      await atWindowStart();
+      await add(ctx, "Milk", ANNA);
+      const eggs = await ctx.grocery.create({ name: "Eggs" }, ANNA);
+      if (eggs.kind === "err") throw new Error("could not add Eggs");
+      await settle(ctx, 1);
+      expect(await messagesFor(ctx, "basile")).toMatchObject([
+        { body: "Anna added Milk and Eggs" },
+      ]);
+      await ctx.announcer.itemAdded(eggs.value);
+      await settle(ctx, 2);
+      expect(await messagesFor(ctx, "basile")).toHaveLength(1);
+    });
+  });
+
   test("shares the embedded job store with the cleanup scheduler", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hejmly-jobs-"));
     try {
@@ -168,7 +199,7 @@ describe("grocery announcer", () => {
         const cleanup = createCleanupScheduler({ service, dataPath });
         const announcer = createGroceryAnnouncer({
           service,
-          push: { notify: async () => ({ sent: 0, removed: 0, failed: 0 }) },
+          push: { notify: async () => ({ kind: "ok", value: { sent: 0, removed: 0, failed: 0 } }) },
           dataPath,
         });
         await announcer.close();

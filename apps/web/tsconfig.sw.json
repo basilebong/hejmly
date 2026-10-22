@@ -11,7 +11,7 @@
     "lib": ["ES2023", "WebWorker"],
     "types": []
   },
-  "include": ["src/sw.ts"],
+  "include": ["src/sw.ts", "src/lib/sw-messages.ts"],
   "references": [
     {
       "path": "../../packages/core"

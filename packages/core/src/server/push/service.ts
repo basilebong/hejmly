@@ -1,10 +1,13 @@
 import { buildPushPayload } from "@block65/webcrypto-web-push";
-import { and, count, eq, ne } from "drizzle-orm";
+import { and, count, eq, gt, ne } from "drizzle-orm";
+import * as v from "valibot";
 import {
   err,
   ok,
   PUSH_TOPICS,
+  type PushDeviceStatus,
   type PushMessage,
+  PushMessageSchema,
   type PushPreferences,
   type PushPreferencesInput,
   type PushSubscriptionId,
@@ -12,17 +15,24 @@ import {
   type PushTopic,
   parsePushSubscriptionId,
   type Result,
+  type SessionId,
   type UserId,
 } from "../../shared/index.ts";
-import { users } from "../auth/schema.ts";
+import { sessions, users } from "../auth/schema.ts";
 import type { Db } from "../db/index.ts";
-import { isAllowedPushEndpoint } from "./endpoints.ts";
+import { normalizePushEndpoint } from "./endpoints.ts";
 import { pushPreferences, pushSubscriptions, pushVapidKeys } from "./schema.ts";
 
 export type PushError =
   | { kind: "endpoint_not_allowed" }
   | { kind: "too_many_devices" }
-  | { kind: "not_found" };
+  | { kind: "session_expired" }
+  | { kind: "not_found" }
+  | { kind: "unavailable" };
+
+export type NotifyError = { kind: "invalid_message" };
+
+export type PushSubscriber = { userId: UserId; sessionId: SessionId };
 
 export type PushRequest = {
   endpoint: string;
@@ -50,7 +60,6 @@ export type PushServiceOptions = {
   isMember: (email: string | null) => boolean;
   subject: string;
   send: PushSender;
-  isAllowedEndpoint?: (url: string) => boolean;
 };
 
 export type PushAudience = { except?: UserId };
@@ -59,16 +68,25 @@ export type PushOutcome = { sent: number; removed: number; failed: number };
 export type PushService = {
   publicKey(): Promise<string>;
   subscribe(
-    userId: UserId,
+    who: PushSubscriber,
     input: PushSubscriptionInput,
   ): Promise<Result<{ id: PushSubscriptionId }, PushError>>;
   unsubscribe(userId: UserId, endpoint: string): Promise<Result<{ endpoint: string }, PushError>>;
+  registered(userId: UserId, endpoint: string): Promise<Result<PushDeviceStatus, PushError>>;
   preferences(userId: UserId): Promise<PushPreferences>;
-  updatePreferences(userId: UserId, input: PushPreferencesInput): Promise<PushPreferences>;
-  notify(topic: PushTopic, audience: PushAudience, message: PushMessage): Promise<PushOutcome>;
+  updatePreferences(
+    userId: UserId,
+    input: PushPreferencesInput,
+  ): Promise<Result<PushPreferences, PushError>>;
+  notify(
+    topic: PushTopic,
+    audience: PushAudience,
+    message: PushMessage,
+  ): Promise<Result<PushOutcome, NotifyError>>;
 };
 
 export const MAX_DEVICES_PER_PERSON = 10;
+export const MAX_REFUSALS = 3;
 const MESSAGE_TTL_SECONDS = 6 * 60 * 60;
 const KEY_ROW = "default";
 
@@ -99,20 +117,44 @@ const originOf = (endpoint: string): string => {
   }
 };
 
+const codeOf = (error: unknown): string | undefined => {
+  for (let current = error; typeof current === "object" && current !== null; ) {
+    if ("code" in current && typeof current.code === "string") return current.code;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return undefined;
+};
+
+const unavailable = (op: string, error: unknown): Result<never, PushError> => {
+  console.error("push: storage failed", {
+    op,
+    error: error instanceof Error ? error.name : typeof error,
+    code: codeOf(error),
+  });
+  return err({ kind: "unavailable" });
+};
+
+const isTransient = (status: number): boolean => status === 429 || status >= 500;
+
 export const createPushService = (db: Db, options: PushServiceOptions): PushService => {
-  const allowed = options.isAllowedEndpoint ?? isAllowedPushEndpoint;
   let keys: Promise<VapidKeys> | null = null;
 
+  const storedKeys = async (): Promise<VapidKeys | undefined> => {
+    const row = (await db.select().from(pushVapidKeys).where(eq(pushVapidKeys.id, KEY_ROW)))[0];
+    return row === undefined ? undefined : { publicKey: row.publicKey, privateKey: row.privateKey };
+  };
+
   const loadKeys = async (): Promise<VapidKeys> => {
+    const existing = await storedKeys();
+    if (existing !== undefined) return existing;
     const fresh = await generateVapidKeys();
     await db
       .insert(pushVapidKeys)
       .values({ id: KEY_ROW, ...fresh, createdAt: new Date() })
       .onConflictDoNothing();
-    const rows = await db.select().from(pushVapidKeys).where(eq(pushVapidKeys.id, KEY_ROW));
-    const row = rows[0];
-    if (row === undefined) throw new Error("push: VAPID keys missing after insert");
-    return { publicKey: row.publicKey, privateKey: row.privateKey };
+    const stored = await storedKeys();
+    if (stored === undefined) throw new Error("push: VAPID keys missing after insert");
+    return stored;
   };
 
   const vapidKeys = (): Promise<VapidKeys> => {
@@ -131,92 +173,148 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
     return { grocery_added: chosen.get("grocery_added") ?? true };
   };
 
+  const forget = async (id: string, endpoint: string, reason: string, status?: number) => {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, id));
+    console.info(`push: ${reason}, removed`, { origin: originOf(endpoint), status });
+  };
+
   return {
     async publicKey() {
       return (await vapidKeys()).publicKey;
     },
 
-    async subscribe(userId, input) {
-      if (!allowed(input.endpoint)) return err({ kind: "endpoint_not_allowed" });
+    async subscribe(who, input) {
+      const target = normalizePushEndpoint(input.endpoint);
+      if (target === null) return err({ kind: "endpoint_not_allowed" });
       const now = new Date();
       const fresh = parsePushSubscriptionId(crypto.randomUUID());
-      const outcome = db.transaction(
-        (tx): Result<{ id: PushSubscriptionId }, PushError> => {
-          const existing = tx
-            .select({ id: pushSubscriptions.id })
-            .from(pushSubscriptions)
-            .where(eq(pushSubscriptions.endpoint, input.endpoint))
-            .all()[0];
-          if (existing !== undefined) {
-            tx.update(pushSubscriptions)
-              .set({ userId, p256dh: input.keys.p256dh, auth: input.keys.auth, updatedAt: now })
-              .where(eq(pushSubscriptions.id, existing.id))
-              .run();
-            return ok({ id: parsePushSubscriptionId(existing.id) });
-          }
-          const devices =
-            tx
-              .select({ n: count() })
+      try {
+        return db.transaction(
+          (tx): Result<{ id: PushSubscriptionId }, PushError> => {
+            const live = tx
+              .select({ id: sessions.id })
+              .from(sessions)
+              .where(
+                and(
+                  eq(sessions.id, who.sessionId),
+                  eq(sessions.userId, who.userId),
+                  gt(sessions.expiresAt, now),
+                ),
+              )
+              .all()[0];
+            if (live === undefined) return err({ kind: "session_expired" });
+            const existing = tx
+              .select({ id: pushSubscriptions.id, userId: pushSubscriptions.userId })
               .from(pushSubscriptions)
-              .where(eq(pushSubscriptions.userId, userId))
-              .all()[0]?.n ?? 0;
-          if (devices >= MAX_DEVICES_PER_PERSON) return err({ kind: "too_many_devices" });
-          tx.insert(pushSubscriptions)
-            .values({
-              id: fresh,
-              userId,
-              endpoint: input.endpoint,
+              .where(eq(pushSubscriptions.endpoint, target))
+              .all()[0];
+            if (existing?.userId !== who.userId) {
+              const devices =
+                tx
+                  .select({ n: count() })
+                  .from(pushSubscriptions)
+                  .where(eq(pushSubscriptions.userId, who.userId))
+                  .all()[0]?.n ?? 0;
+              if (devices >= MAX_DEVICES_PER_PERSON) return err({ kind: "too_many_devices" });
+            }
+            const device = {
+              userId: who.userId,
+              sessionId: who.sessionId,
               p256dh: input.keys.p256dh,
               auth: input.keys.auth,
-              createdAt: now,
+              refusals: 0,
               updatedAt: now,
-            })
-            .run();
-          return ok({ id: fresh });
-        },
-        { behavior: "immediate" },
-      );
-      return outcome;
+            };
+            if (existing !== undefined) {
+              tx.update(pushSubscriptions)
+                .set(device)
+                .where(eq(pushSubscriptions.id, existing.id))
+                .run();
+              return ok({ id: parsePushSubscriptionId(existing.id) });
+            }
+            tx.insert(pushSubscriptions)
+              .values({ ...device, id: fresh, endpoint: target, createdAt: now })
+              .run();
+            return ok({ id: fresh });
+          },
+          { behavior: "immediate" },
+        );
+      } catch (error) {
+        return unavailable("subscribe", error);
+      }
     },
 
     async unsubscribe(userId, endpoint) {
-      const deleted = await db
-        .delete(pushSubscriptions)
-        .where(and(eq(pushSubscriptions.endpoint, endpoint), eq(pushSubscriptions.userId, userId)))
-        .returning({ endpoint: pushSubscriptions.endpoint });
-      const row = deleted[0];
-      return row === undefined ? err({ kind: "not_found" }) : ok({ endpoint: row.endpoint });
+      const target = normalizePushEndpoint(endpoint);
+      if (target === null) return err({ kind: "not_found" });
+      try {
+        const deleted = await db
+          .delete(pushSubscriptions)
+          .where(and(eq(pushSubscriptions.endpoint, target), eq(pushSubscriptions.userId, userId)))
+          .returning({ endpoint: pushSubscriptions.endpoint });
+        const row = deleted[0];
+        return row === undefined ? err({ kind: "not_found" }) : ok({ endpoint: row.endpoint });
+      } catch (error) {
+        return unavailable("unsubscribe", error);
+      }
+    },
+
+    async registered(userId, endpoint) {
+      const target = normalizePushEndpoint(endpoint);
+      if (target === null) return ok({ registered: false });
+      try {
+        const rows = await db
+          .select({ id: pushSubscriptions.id })
+          .from(pushSubscriptions)
+          .where(and(eq(pushSubscriptions.endpoint, target), eq(pushSubscriptions.userId, userId)));
+        return ok({ registered: rows.length > 0 });
+      } catch (error) {
+        return unavailable("registered", error);
+      }
     },
 
     preferences,
 
     async updatePreferences(userId, input) {
-      for (const topic of PUSH_TOPICS) {
-        const enabled = input[topic];
-        if (enabled === undefined) continue;
-        await db
-          .insert(pushPreferences)
-          .values({ userId, topic, enabled })
-          .onConflictDoUpdate({
-            target: [pushPreferences.userId, pushPreferences.topic],
-            set: { enabled },
-          });
+      try {
+        for (const topic of PUSH_TOPICS) {
+          const enabled = input[topic];
+          if (enabled === undefined) continue;
+          await db
+            .insert(pushPreferences)
+            .values({ userId, topic, enabled })
+            .onConflictDoUpdate({
+              target: [pushPreferences.userId, pushPreferences.topic],
+              set: { enabled },
+            });
+        }
+        return ok(await preferences(userId));
+      } catch (error) {
+        return unavailable("preferences", error);
       }
-      return preferences(userId);
     },
 
-    async notify(topic, audience, message) {
+    async notify(topic, audience, input) {
+      const parsed = v.safeParse(PushMessageSchema, input);
+      if (!parsed.success) return err({ kind: "invalid_message" });
+      const message = parsed.output;
+      const now = new Date();
       const rows = await db
         .select({
           id: pushSubscriptions.id,
           endpoint: pushSubscriptions.endpoint,
           p256dh: pushSubscriptions.p256dh,
           auth: pushSubscriptions.auth,
+          refusals: pushSubscriptions.refusals,
           email: users.email,
           enabled: pushPreferences.enabled,
         })
         .from(pushSubscriptions)
         .innerJoin(users, eq(users.id, pushSubscriptions.userId))
+        .innerJoin(
+          sessions,
+          and(eq(sessions.id, pushSubscriptions.sessionId), gt(sessions.expiresAt, now)),
+        )
         .leftJoin(
           pushPreferences,
           and(
@@ -228,12 +326,16 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
           audience.except === undefined ? undefined : ne(pushSubscriptions.userId, audience.except),
         );
       const targets = rows.filter((r) => options.isMember(r.email) && r.enabled !== false);
-      if (targets.length === 0) return { sent: 0, removed: 0, failed: 0 };
+      if (targets.length === 0) return ok({ sent: 0, removed: 0, failed: 0 });
 
       const vapid = { subject: options.subject, ...(await vapidKeys()) };
       const results = await Promise.all(
         targets.map(async (target): Promise<keyof PushOutcome> => {
           try {
+            if (normalizePushEndpoint(target.endpoint) !== target.endpoint) {
+              await forget(target.id, target.endpoint, "endpoint no longer allowed");
+              return "removed";
+            }
             const payload = await buildPushPayload(
               { data: message, options: { ttl: MESSAGE_TTL_SECONDS, topic: message.tag } },
               {
@@ -253,31 +355,47 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
               headers,
               body: payload.body,
             });
-            if (status >= 200 && status < 300) return "sent";
+            if (status >= 200 && status < 300) {
+              if (target.refusals > 0) {
+                await db
+                  .update(pushSubscriptions)
+                  .set({ refusals: 0 })
+                  .where(eq(pushSubscriptions.id, target.id));
+              }
+              return "sent";
+            }
             if (status === 404 || status === 410) {
-              await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, target.id));
-              console.info("push: device gone, removed", {
-                origin: originOf(target.endpoint),
-                status,
-              });
+              await forget(target.id, target.endpoint, "device gone", status);
               return "removed";
+            }
+            if (!isTransient(status)) {
+              const refusals = target.refusals + 1;
+              if (refusals >= MAX_REFUSALS) {
+                await forget(target.id, target.endpoint, "device keeps refusing", status);
+                return "removed";
+              }
+              await db
+                .update(pushSubscriptions)
+                .set({ refusals })
+                .where(eq(pushSubscriptions.id, target.id));
             }
             console.error("push: delivery rejected", { origin: originOf(target.endpoint), status });
             return "failed";
           } catch (error) {
             console.error("push: delivery failed", {
               origin: originOf(target.endpoint),
-              error: error instanceof Error ? error.message : String(error),
+              error: error instanceof Error ? error.name : typeof error,
+              code: codeOf(error),
             });
             return "failed";
           }
         }),
       );
-      return {
+      return ok({
         sent: results.filter((r) => r === "sent").length,
         removed: results.filter((r) => r === "removed").length,
         failed: results.filter((r) => r === "failed").length,
-      };
+      });
     },
   };
 };

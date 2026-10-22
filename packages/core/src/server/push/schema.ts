@@ -1,5 +1,5 @@
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { users } from "../auth/schema.ts";
+import { sessions, users } from "../auth/schema.ts";
 
 export const pushVapidKeys = sqliteTable("push_vapid_keys", {
   id: text("id").primaryKey(),
@@ -15,13 +15,20 @@ export const pushSubscriptions = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
     endpoint: text("endpoint").notNull().unique(),
     p256dh: text("p256dh").notNull(),
     auth: text("auth").notNull(),
+    refusals: integer("refusals").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (t) => ({ userIdx: index("push_subscriptions_user_id_idx").on(t.userId) }),
+  (t) => ({
+    userIdx: index("push_subscriptions_user_id_idx").on(t.userId),
+    sessionIdx: index("push_subscriptions_session_id_idx").on(t.sessionId),
+  }),
 );
 
 export const pushPreferences = sqliteTable(

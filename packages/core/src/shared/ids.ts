@@ -20,3 +20,7 @@ export const PushSubscriptionIdSchema = v.pipe(
 export type PushSubscriptionId = v.InferOutput<typeof PushSubscriptionIdSchema>;
 export const parsePushSubscriptionId = (raw: unknown): PushSubscriptionId =>
   v.parse(PushSubscriptionIdSchema, raw);
+
+export const SessionIdSchema = v.pipe(v.string(), v.minLength(1), v.brand("SessionId"));
+export type SessionId = v.InferOutput<typeof SessionIdSchema>;
+export const parseSessionId = (raw: unknown): SessionId => v.parse(SessionIdSchema, raw);

@@ -15,3 +15,11 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+type HejmlyQueryMeta = { persist?: boolean };
+
+declare module "@tanstack/react-query" {
+  interface Register {
+    queryMeta: HejmlyQueryMeta;
+  }
+}

@@ -1,10 +1,22 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { type PushMessage, parseUserId, type UserId } from "../../shared/index.ts";
-import { users } from "../auth/schema.ts";
+import {
+  type PushMessage,
+  parseSessionId,
+  parseUserId,
+  type SessionId,
+  type UserId,
+} from "../../shared/index.ts";
+import { sessions, users } from "../auth/schema.ts";
 import type { Db } from "../db/index.ts";
 import { createTestDevice, verifyVapid, withTestAuth } from "../test/index.ts";
-import { createPushService, type PushRequest, type PushSender } from "./service.ts";
+import { pushSubscriptions } from "./schema.ts";
+import {
+  createPushService,
+  MAX_DEVICES_PER_PERSON,
+  type PushRequest,
+  type PushSender,
+} from "./service.ts";
 
 const ANNA = parseUserId("u_anna");
 const BASILE = parseUserId("u_basile");
@@ -12,14 +24,34 @@ const EVE = parseUserId("u_eve");
 const MEMBERS = new Set(["anna@example.com", "basile@example.com"]);
 const SUBJECT = "https://hejmly.example";
 
+const sessionOf = (user: UserId): SessionId => parseSessionId(`s_${user}`);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const seed = async (db: Db): Promise<void> => {
   const now = new Date();
+  const later = new Date(now.getTime() + DAY_MS);
   await db.insert(users).values([
     { id: ANNA, name: "Anna", email: "anna@example.com", createdAt: now, updatedAt: now },
     { id: BASILE, name: "Basile", email: "basile@example.com", createdAt: now, updatedAt: now },
     { id: EVE, name: "Eve", email: "eve@example.com", createdAt: now, updatedAt: now },
   ]);
+  await db.insert(sessions).values(
+    [ANNA, BASILE, EVE].map((user) => ({
+      id: sessionOf(user),
+      token: `token-${user}`,
+      userId: user,
+      expiresAt: later,
+      createdAt: now,
+      updatedAt: now,
+    })),
+  );
 };
+
+const deviceRows = (db: Db) =>
+  db
+    .select({ userId: pushSubscriptions.userId, endpoint: pushSubscriptions.endpoint })
+    .from(pushSubscriptions)
+    .all();
 
 const recorder = (status: (req: PushRequest) => number = () => 201) => {
   const requests: PushRequest[] = [];
@@ -73,10 +105,15 @@ const subscribe = async (
   url: string,
 ) => {
   const device = await createTestDevice();
-  const result = await service.subscribe(user, device.subscription(url));
+  const result = await service.subscribe(
+    { userId: user, sessionId: sessionOf(user) },
+    device.subscription(url),
+  );
   expect(result.kind).toBe("ok");
   return device;
 };
+
+const as = (user: UserId) => ({ userId: user, sessionId: sessionOf(user) });
 
 describe("push service", () => {
   test("generates one VAPID key pair on first use and keeps it", async () => {
@@ -106,7 +143,7 @@ describe("push service", () => {
     await withPush(async ({ service }) => {
       const device = await createTestDevice();
       for (const url of ["https://169.254.169.254/latest", "https://intranet.local/push"]) {
-        expect(await service.subscribe(ANNA, device.subscription(url))).toEqual({
+        expect(await service.subscribe(as(ANNA), device.subscription(url))).toEqual({
           kind: "err",
           error: { kind: "endpoint_not_allowed" },
         });
@@ -118,13 +155,13 @@ describe("push service", () => {
     await withPush(async ({ service }) => {
       for (let i = 0; i < 10; i += 1) await subscribe(service, ANNA, endpoint("anna", i));
       const device = await createTestDevice();
-      expect(await service.subscribe(ANNA, device.subscription(endpoint("anna", 99)))).toEqual({
+      expect(await service.subscribe(as(ANNA), device.subscription(endpoint("anna", 99)))).toEqual({
         kind: "err",
         error: { kind: "too_many_devices" },
       });
-      expect((await service.subscribe(ANNA, device.subscription(endpoint("anna", 3)))).kind).toBe(
-        "ok",
-      );
+      expect(
+        (await service.subscribe(as(ANNA), device.subscription(endpoint("anna", 3)))).kind,
+      ).toBe("ok");
     });
   });
 
@@ -133,7 +170,7 @@ describe("push service", () => {
       const annaPhone = await subscribe(service, ANNA, endpoint("anna"));
       await subscribe(service, BASILE, endpoint("basile"));
       const result = await service.notify("grocery_added", { except: BASILE }, message);
-      expect(result).toEqual({ sent: 1, removed: 0, failed: 0 });
+      expect(result).toEqual({ kind: "ok", value: { sent: 1, removed: 0, failed: 0 } });
       expect(sent.map((r) => r.endpoint)).toEqual([endpoint("anna")]);
       const request = sent[0];
       if (request === undefined) throw new Error("nothing sent");
@@ -157,7 +194,7 @@ describe("push service", () => {
       await subscribe(service, EVE, endpoint("eve"));
       await service.updatePreferences(ANNA, { grocery_added: false });
       const result = await service.notify("grocery_added", { except: BASILE }, message);
-      expect(result).toEqual({ sent: 0, removed: 0, failed: 0 });
+      expect(result).toEqual({ kind: "ok", value: { sent: 0, removed: 0, failed: 0 } });
       expect(sent).toEqual([]);
     });
   });
@@ -175,15 +212,13 @@ describe("push service", () => {
             : 201,
       );
       expect(await service.notify("grocery_added", {}, message)).toEqual({
-        sent: 1,
-        removed: 1,
-        failed: 1,
+        kind: "ok",
+        value: { sent: 1, removed: 1, failed: 1 },
       });
       statusFor(() => 201);
       expect(await service.notify("grocery_added", {}, message)).toEqual({
-        sent: 2,
-        removed: 0,
-        failed: 0,
+        kind: "ok",
+        value: { sent: 2, removed: 0, failed: 0 },
       });
     });
   });
@@ -200,9 +235,8 @@ describe("push service", () => {
       });
       await subscribe(service, ANNA, endpoint("anna"));
       expect(await service.notify("grocery_added", {}, message)).toEqual({
-        sent: 0,
-        removed: 0,
-        failed: 1,
+        kind: "ok",
+        value: { sent: 0, removed: 0, failed: 1 },
       });
     });
   });
@@ -227,7 +261,8 @@ describe("push service", () => {
     await withPush(async ({ service }) => {
       expect(await service.preferences(ANNA)).toEqual({ grocery_added: true });
       expect(await service.updatePreferences(ANNA, { grocery_added: false })).toEqual({
-        grocery_added: false,
+        kind: "ok",
+        value: { grocery_added: false },
       });
       expect(await service.preferences(ANNA)).toEqual({ grocery_added: false });
       expect(await service.preferences(BASILE)).toEqual({ grocery_added: true });
@@ -243,6 +278,197 @@ describe("push service", () => {
         db.$client.query(`SELECT count(*) AS n FROM ${table} WHERE user_id = 'u_anna'`).get();
       expect(count("push_subscriptions")).toEqual({ n: 0 });
       expect(count("push_preferences")).toEqual({ n: 0 });
+    });
+  });
+
+  test("a device belongs to the session that turned it on; signing out removes it", async () => {
+    await withPush(async ({ db, service, sent }) => {
+      await subscribe(service, ANNA, endpoint("anna"));
+      await db.delete(sessions).where(eq(sessions.id, sessionOf(ANNA)));
+      expect(deviceRows(db)).toEqual([]);
+      await service.notify("grocery_added", {}, message);
+      expect(sent).toEqual([]);
+    });
+  });
+
+  test("an expired session's devices are not sent to, and cannot be added", async () => {
+    await withPush(async ({ db, service, sent }) => {
+      await subscribe(service, ANNA, endpoint("anna"));
+      await db
+        .update(sessions)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(sessions.id, sessionOf(ANNA)));
+      expect(await service.notify("grocery_added", {}, message)).toEqual({
+        kind: "ok",
+        value: { sent: 0, removed: 0, failed: 0 },
+      });
+      expect(sent).toEqual([]);
+      const device = await createTestDevice();
+      expect(await service.subscribe(as(ANNA), device.subscription(endpoint("anna", 2)))).toEqual({
+        kind: "err",
+        error: { kind: "session_expired" },
+      });
+      expect(
+        await service.subscribe(
+          { userId: BASILE, sessionId: sessionOf(ANNA) },
+          device.subscription(endpoint("anna", 3)),
+        ),
+      ).toEqual({ kind: "err", error: { kind: "session_expired" } });
+    });
+  });
+
+  test("taking over another person's device counts against your own device limit", async () => {
+    await withPush(async ({ db, service }) => {
+      await subscribe(service, ANNA, endpoint("shared"));
+      for (let i = 0; i < MAX_DEVICES_PER_PERSON; i += 1) {
+        await subscribe(service, BASILE, endpoint("basile", i));
+      }
+      const device = await createTestDevice();
+      expect(await service.subscribe(as(BASILE), device.subscription(endpoint("shared")))).toEqual({
+        kind: "err",
+        error: { kind: "too_many_devices" },
+      });
+      expect(deviceRows(db).filter((r) => r.endpoint === endpoint("shared"))).toEqual([
+        { userId: ANNA, endpoint: endpoint("shared") },
+      ]);
+    });
+  });
+
+  test("the same endpoint spelled differently is one device", async () => {
+    await withPush(async ({ db, service }) => {
+      await subscribe(service, ANNA, "https://FCM.GOOGLEAPIS.COM/fcm/send/anna-1");
+      await subscribe(service, ANNA, endpoint("anna"));
+      expect(deviceRows(db)).toEqual([{ userId: ANNA, endpoint: endpoint("anna") }]);
+      expect(
+        await service.unsubscribe(ANNA, "https://fcm.googleapis.com:443/fcm/send/anna-1"),
+      ).toEqual({ kind: "ok", value: { endpoint: endpoint("anna") } });
+    });
+  });
+
+  test("tells a person whether this device is registered to them", async () => {
+    await withPush(async ({ service }) => {
+      await subscribe(service, ANNA, endpoint("anna"));
+      expect(await service.registered(ANNA, endpoint("anna"))).toEqual({
+        kind: "ok",
+        value: { registered: true },
+      });
+      expect(await service.registered(BASILE, endpoint("anna"))).toEqual({
+        kind: "ok",
+        value: { registered: false },
+      });
+      expect(await service.registered(ANNA, "https://intranet.local/x")).toEqual({
+        kind: "ok",
+        value: { registered: false },
+      });
+    });
+  });
+
+  test("a device the push service keeps refusing is dropped; throttling and outages are not", async () => {
+    await withPush(async ({ db, service, statusFor }) => {
+      await subscribe(service, ANNA, endpoint("anna", 1));
+      await subscribe(service, ANNA, endpoint("anna", 2));
+      await subscribe(service, ANNA, endpoint("anna", 3));
+      statusFor((req) =>
+        req.endpoint === endpoint("anna", 1)
+          ? 403
+          : req.endpoint === endpoint("anna", 2)
+            ? 429
+            : 503,
+      );
+      for (let i = 0; i < 2; i += 1) {
+        expect(await service.notify("grocery_added", {}, message)).toEqual({
+          kind: "ok",
+          value: { sent: 0, removed: 0, failed: 3 },
+        });
+      }
+      expect(await service.notify("grocery_added", {}, message)).toEqual({
+        kind: "ok",
+        value: { sent: 0, removed: 1, failed: 2 },
+      });
+      expect(deviceRows(db).map((r) => r.endpoint)).toEqual([
+        endpoint("anna", 2),
+        endpoint("anna", 3),
+      ]);
+    });
+  });
+
+  test("a delivered message clears earlier refusals", async () => {
+    await withPush(async ({ db, service, statusFor }) => {
+      await subscribe(service, ANNA, endpoint("anna"));
+      statusFor(() => 403);
+      await service.notify("grocery_added", {}, message);
+      await service.notify("grocery_added", {}, message);
+      statusFor(() => 201);
+      await service.notify("grocery_added", {}, message);
+      statusFor(() => 403);
+      await service.notify("grocery_added", {}, message);
+      await service.notify("grocery_added", {}, message);
+      expect(deviceRows(db)).toHaveLength(1);
+    });
+  });
+
+  test("never sends to a stored endpoint that is no longer an allowed push service", async () => {
+    await withPush(async ({ db, service, sent }) => {
+      await subscribe(service, ANNA, endpoint("anna"));
+      db.$client.run("UPDATE push_subscriptions SET endpoint = 'https://169.254.169.254/x'");
+      expect(await service.notify("grocery_added", {}, message)).toEqual({
+        kind: "ok",
+        value: { sent: 0, removed: 1, failed: 0 },
+      });
+      expect(sent).toEqual([]);
+      expect(deviceRows(db)).toEqual([]);
+    });
+  });
+
+  test("refuses a message that would not pass the service worker's checks", async () => {
+    await withPush(async ({ service, sent }) => {
+      await subscribe(service, ANNA, endpoint("anna"));
+      const result = await service.notify(
+        "grocery_added",
+        {},
+        { ...message, url: "https://evil.example/" },
+      );
+      expect(result).toEqual({ kind: "err", error: { kind: "invalid_message" } });
+      expect(sent).toEqual([]);
+    });
+  });
+
+  test("a storage failure is reported without logging the device's endpoint or keys", async () => {
+    await withPush(async ({ db, service }) => {
+      const logged = spyOn(console, "error").mockImplementation(() => {});
+      try {
+        db.$client.run("DROP TABLE push_subscriptions");
+        const device = await createTestDevice();
+        const input = device.subscription(endpoint("secret-device"));
+        expect(await service.subscribe(as(ANNA), input)).toEqual({
+          kind: "err",
+          error: { kind: "unavailable" },
+        });
+        expect(await service.unsubscribe(ANNA, endpoint("secret-device"))).toEqual({
+          kind: "err",
+          error: { kind: "unavailable" },
+        });
+        const output = JSON.stringify(logged.mock.calls);
+        expect(output).toContain("push:");
+        expect(output).not.toContain("secret-device");
+        expect(output).not.toContain(input.keys.p256dh);
+      } finally {
+        logged.mockRestore();
+      }
+    });
+  });
+
+  test("an existing key pair is loaded, not regenerated", async () => {
+    await withTestAuth({}, async ({ db }) => {
+      const options = { isMember: () => true, subject: SUBJECT, send: recorder().send };
+      await createPushService(db, options).publicKey();
+      const generate = spyOn(crypto.subtle, "generateKey");
+      try {
+        await createPushService(db, options).publicKey();
+        expect(generate).not.toHaveBeenCalled();
+      } finally {
+        generate.mockRestore();
+      }
     });
   });
 });

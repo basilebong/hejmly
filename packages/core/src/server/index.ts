@@ -39,8 +39,10 @@ export {
   createPushRoutes,
   createPushService,
   fetchPushSender,
-  isAllowedPushEndpoint,
   MAX_DEVICES_PER_PERSON,
+  MAX_REFUSALS,
+  type NotifyError,
+  normalizePushEndpoint,
   type PushAudience,
   type PushError,
   type PushOutcome,
@@ -49,4 +51,5 @@ export {
   type PushSender,
   type PushService,
   type PushServiceOptions,
+  type PushSubscriber,
 } from "./push/index.ts";
