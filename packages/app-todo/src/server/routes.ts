@@ -53,6 +53,7 @@ const invalidInput = (message = "Invalid input") =>
 
 export const createTodoRoutes = (deps: TodoDeps) =>
   new Hono<{ Variables: SessionVariables }>()
+    .get("/members", async (c) => c.json({ members: await deps.service.listMembers() }))
     .get("/projects", async (c) => {
       const projects = await deps.service.listProjects();
       return c.json({ projects });

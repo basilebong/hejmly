@@ -27,7 +27,7 @@ export const FormDrawer = ({
     <DrawerContent className="rounded-t-3xl bg-white">
       <DrawerTitle className="sr-only">{title}</DrawerTitle>
       <DrawerDescription className="sr-only">{description}</DrawerDescription>
-      <div className="flex max-h-[70dvh] flex-col pt-3 pb-2">{open && children}</div>
+      <div className="flex min-h-0 flex-1 flex-col pt-3 pb-2">{open && children}</div>
     </DrawerContent>
   </Drawer>
 );

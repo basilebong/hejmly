@@ -78,6 +78,20 @@
       "when": 1792519275754,
       "tag": "0010_superb_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792690696597,
+      "tag": "0011_bored_lake",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792690696855,
+      "tag": "0012_futuristic_stone_men",
+      "breakpoints": true
     }
   ]
 }

@@ -3,10 +3,12 @@ import {
   localRowStates,
   type Project,
   type ProjectWithTasks,
+  parseDueDate,
   parseProjectId,
   parseTaskId,
   type Task,
   type TaskId,
+  type TodoMember,
 } from "@hejmly/app-todo/shared";
 import { parseUserId } from "@hejmly/core/shared";
 import { MutationObserver, QueryClient, QueryObserver } from "@tanstack/react-query";
@@ -20,7 +22,7 @@ import {
   type TodoApi,
   type TodoCacheEnv,
 } from "./cache.ts";
-import { createTaskKey, PROJECTS_QUERY_KEY, projectQueryKey } from "./keys.ts";
+import { createTaskKey, MEMBERS_QUERY_KEY, PROJECTS_QUERY_KEY, projectQueryKey } from "./keys.ts";
 
 const P = parseProjectId("p1");
 const me = { kind: "user", id: parseUserId("u1"), name: "Basile", initial: "B" } as const;
@@ -41,14 +43,19 @@ const task = (id: string, title: string): Task => ({
   title,
   notes: null,
   status: { kind: "open" },
+  dueOn: null,
+  assignee: null,
   createdAt: 1,
   updatedAt: 1,
   addedBy: me,
 });
 
+const anna: TodoMember = { id: parseUserId("u2"), name: "Anna", initial: "A" };
+
 const unexpected = (name: string) => () => Promise.reject(new Error(`unexpected ${name} call`));
 
 const baseApi: TodoApi = {
+  fetchMembers: unexpected("fetchMembers"),
   fetchProjects: unexpected("fetchProjects"),
   fetchProject: unexpected("fetchProject"),
   createProject: unexpected("createProject"),
@@ -254,6 +261,73 @@ describe("todo cache lifecycle", () => {
     await idle(h.qc);
 
     expect(fetches).toBe(2);
+    stop();
+  });
+
+  test("an optimistic create shows the due date and the assignee's name before the server answers", async () => {
+    const saved = Promise.withResolvers<Task>();
+    const h = harness({
+      fetchProject: async () => ({ project, tasks: [] }),
+      createTask: () => saved.promise,
+    });
+    h.qc.setQueryData(MEMBERS_QUERY_KEY, [anna]);
+    const stop = await watchDetail(h);
+    const tempId = parseTaskId("tmp_new");
+
+    const creating = new MutationObserver(h.qc, h.mutations.createTask).mutate({
+      input: { title: "Sow", dueOn: parseDueDate("2026-10-31"), assigneeId: anna.id },
+      tempId,
+    });
+    for (let i = 0; i < 5; i += 1) await tick();
+
+    const local = h.qc.getQueryData<ProjectWithTasks>(projectQueryKey(P))?.tasks[0];
+    expect(local).toMatchObject({ id: tempId, dueOn: "2026-10-31", assignee: anna });
+
+    saved.resolve({ ...task("s1", "Sow"), dueOn: parseDueDate("2026-10-31"), assignee: anna });
+    await creating;
+    await idle(h.qc);
+    stop();
+  });
+
+  test("a failed edit restores the due date and assignee it changed, not a concurrent title edit", async () => {
+    const A: Task = { ...task("a", "Dig"), dueOn: parseDueDate("2026-10-31"), assignee: anna };
+    const retitled: Task = { ...A, title: "Dig deep" };
+    const failing = Promise.withResolvers<Task>();
+    const refetch = Promise.withResolvers<ProjectWithTasks>();
+    let calls = 0;
+    let edits = 0;
+    const h = harness({
+      fetchProject: () => {
+        calls += 1;
+        return calls === 1 ? Promise.resolve({ project, tasks: [A] }) : refetch.promise;
+      },
+      updateTask: () => {
+        edits += 1;
+        return edits === 1 ? failing.promise : Promise.resolve(retitled);
+      },
+    });
+    h.qc.setQueryData(MEMBERS_QUERY_KEY, [anna]);
+    const stop = await watchDetail(h);
+
+    const moving = new MutationObserver(h.qc, h.mutations.editTask)
+      .mutate({ taskId: A.id, input: { dueOn: null, assigneeId: null } })
+      .catch(() => {});
+    const current = () => h.qc.getQueryData<ProjectWithTasks>(projectQueryKey(P))?.tasks[0];
+    for (let i = 0; i < 5; i += 1) await tick();
+    expect(current()).toMatchObject({ dueOn: null, assignee: null });
+
+    await new MutationObserver(h.qc, h.mutations.editTask).mutate({
+      taskId: A.id,
+      input: { title: "Dig deep" },
+    });
+    failing.reject(new TodoApiError(500, "boom"));
+    await moving;
+    for (let i = 0; i < 20; i += 1) await tick();
+
+    expect(current()).toMatchObject({ title: "Dig deep", dueOn: "2026-10-31", assignee: anna });
+
+    refetch.resolve({ project, tasks: [retitled] });
+    await idle(h.qc);
     stop();
   });
 });

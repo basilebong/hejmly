@@ -1,18 +1,37 @@
 import type { ReactElement } from "react";
-import { isDone, type SyncState, type Task, type TaskId } from "../shared/index.ts";
+import {
+  type DueDate,
+  isDone,
+  orderOpenTasks,
+  type SyncState,
+  type Task,
+  type TaskId,
+} from "../shared/index.ts";
 import { TaskRow, type TaskRowHandlers } from "./TaskRow.tsx";
 
 type TaskListProps = {
   tasks: readonly Task[];
+  today: DueDate;
   syncStateOf: (id: TaskId) => SyncState;
   handlersFor: (id: TaskId) => TaskRowHandlers;
 };
 
-export const TaskList = ({ tasks, syncStateOf, handlersFor }: TaskListProps): ReactElement => {
-  const open = tasks.filter((t) => !isDone(t.status));
+export const TaskList = ({
+  tasks,
+  today,
+  syncStateOf,
+  handlersFor,
+}: TaskListProps): ReactElement => {
+  const open = orderOpenTasks(tasks.filter((t) => !isDone(t.status)));
   const done = tasks.filter((t) => isDone(t.status));
   const row = (task: Task): ReactElement => (
-    <TaskRow key={task.id} task={task} syncState={syncStateOf(task.id)} {...handlersFor(task.id)} />
+    <TaskRow
+      key={task.id}
+      task={task}
+      today={today}
+      syncState={syncStateOf(task.id)}
+      {...handlersFor(task.id)}
+    />
   );
 
   return (

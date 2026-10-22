@@ -1,20 +1,24 @@
 import { type AuditRecorder, createToolAuditor } from "@hejmly/core/server";
-import type { UserId } from "@hejmly/core/shared";
+import { parseUserId, type UserId } from "@hejmly/core/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { match } from "ts-pattern";
+import * as v from "valibot";
 import * as z from "zod";
 import type { TodoService } from "../server/index.ts";
 import {
+  DueDateSchema,
   ID_MAX_LENGTH,
   PROJECT_DESCRIPTION_MAX,
   PROJECT_NAME_MAX,
   type Project,
+  parseDueDate,
   parseProjectId,
   parseTaskId,
   TASK_NOTES_MAX,
   TASK_TITLE_MAX,
   type Task,
   type TodoError,
+  type TodoMember,
 } from "../shared/index.ts";
 
 const idInput = z.string().min(1).max(ID_MAX_LENGTH);
@@ -32,14 +36,27 @@ const projectText = (p: Project): string => {
 const taskText = (t: Task): string => {
   const box = t.status.kind === "done" ? "[x]" : "[ ]";
   const notes = t.notes === null ? "" : ` — ${t.notes}`;
-  return `${box} ${t.title}${notes} (id: ${t.id}, added by ${t.addedBy.name})`;
+  const details = [
+    ...(t.dueOn === null ? [] : [`due ${t.dueOn}`]),
+    ...(t.assignee === null ? [] : [`assigned to ${t.assignee.name}`]),
+    `id: ${t.id}`,
+    `added by ${t.addedBy.name}`,
+  ];
+  return `${box} ${t.title}${notes} (${details.join(", ")})`;
 };
+
+const memberText = (m: TodoMember): string => `${m.name} (id: ${m.id})`;
 
 const errorText = (error: TodoError): string =>
   match(error)
     .with({ kind: "project_not_found" }, (e) => `No project found with id "${e.id}".`)
     .with({ kind: "task_not_found" }, (e) => `No task found with id "${e.id}".`)
     .with({ kind: "invalid_input" }, (e) => e.message)
+    .with(
+      { kind: "member_not_found" },
+      (e) =>
+        `"${e.id}" is not a household member. Use todo__list_members to find who can be assigned.`,
+    )
     .with({ kind: "already_in_state" }, (e) => `Task is already ${e.state}.`)
     .exhaustive();
 
@@ -57,10 +74,42 @@ const projectName = z.string().trim().min(1).max(PROJECT_NAME_MAX);
 const projectDescription = z.string().trim().max(PROJECT_DESCRIPTION_MAX);
 const taskTitle = z.string().trim().min(1).max(TASK_TITLE_MAX);
 const taskNotes = z.string().trim().max(TASK_NOTES_MAX);
+const dueOnInput = z
+  .string()
+  .refine((raw) => v.is(DueDateSchema, raw), "Use a real calendar date as YYYY-MM-DD")
+  .describe("Due date as YYYY-MM-DD (a calendar day, no time).");
+const assigneeInput = idInput.describe("A member id from todo__list_members.");
+
+const optionalDue = (raw: string | undefined) =>
+  raw === undefined ? {} : { dueOn: parseDueDate(raw) };
+const nullableDue = (raw: string | null | undefined) =>
+  raw === undefined ? {} : { dueOn: raw === null ? null : parseDueDate(raw) };
+const optionalAssignee = (raw: string | undefined) =>
+  raw === undefined ? {} : { assigneeId: parseUserId(raw) };
+const nullableAssignee = (raw: string | null | undefined) =>
+  raw === undefined ? {} : { assigneeId: raw === null ? null : parseUserId(raw) };
 
 export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void => {
   const { service, actor, audit } = deps;
   const auditor = createToolAuditor({ audit, actor, app: "todo" });
+
+  server.registerTool(
+    "todo__list_members",
+    {
+      title: "List household members",
+      description: "List the household members a to-do task can be assigned to, with their ids.",
+      inputSchema: {},
+    },
+    async () => {
+      const members = await service.listMembers();
+      await auditor.record("todo__list_members", { count: members.length });
+      const text =
+        members.length === 0
+          ? "No members have signed in yet."
+          : members.map(memberText).join("\n");
+      return { content: [{ type: "text" as const, text }], structuredContent: { members } };
+    },
+  );
 
   server.registerTool(
     "todo__list_projects",
@@ -176,15 +225,27 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     "todo__add_task",
     {
       title: "Add task",
-      description: "Add a task to a to-do project.",
+      description:
+        "Add a task to a to-do project, optionally with a due date and a household member to do it.",
       inputSchema: {
         projectId: idInput,
         title: taskTitle,
         notes: taskNotes.optional(),
+        dueOn: dueOnInput.optional(),
+        assigneeId: assigneeInput.optional(),
       },
     },
-    async ({ projectId, title, notes }) => {
-      const result = await service.createTask(parseProjectId(projectId), { title, notes }, actor);
+    async ({ projectId, title, notes, dueOn, assigneeId }) => {
+      const result = await service.createTask(
+        parseProjectId(projectId),
+        {
+          title,
+          ...(notes === undefined ? {} : { notes }),
+          ...optionalDue(dueOn),
+          ...optionalAssignee(assigneeId),
+        },
+        actor,
+      );
       if (result.kind === "err")
         return auditor.failure("todo__add_task", result.error, errorText(result.error), {
           projectId,
@@ -237,15 +298,23 @@ export const registerTodoTools = (server: McpServer, deps: TodoToolDeps): void =
     "todo__update_task",
     {
       title: "Update task",
-      description: "Change a task's title or notes (null clears the notes).",
+      description:
+        "Change a task's title, notes, due date or assignee. null clears notes, due date or assignee.",
       inputSchema: {
         taskId: idInput,
         title: taskTitle.optional(),
         notes: taskNotes.nullable().optional(),
+        dueOn: dueOnInput.nullable().optional(),
+        assigneeId: assigneeInput.nullable().optional(),
       },
     },
-    async ({ taskId, title, notes }) => {
-      const result = await service.updateTask(parseTaskId(taskId), { title, notes });
+    async ({ taskId, title, notes, dueOn, assigneeId }) => {
+      const result = await service.updateTask(parseTaskId(taskId), {
+        ...(title === undefined ? {} : { title }),
+        ...(notes === undefined ? {} : { notes }),
+        ...nullableDue(dueOn),
+        ...nullableAssignee(assigneeId),
+      });
       if (result.kind === "err")
         return auditor.failure("todo__update_task", result.error, errorText(result.error), {
           taskId,

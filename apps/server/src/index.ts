@@ -7,6 +7,7 @@ import {
   createAuditRecorder,
   createAuth,
   createDb,
+  isAllowedEmail,
   parseAllowedEmails,
 } from "@hejmly/core/server";
 import { parseRuntimeEnv } from "@hejmly/core/shared";
@@ -25,20 +26,23 @@ const allowedHosts = [
 ];
 
 const db = createDb({ path: env.DATABASE_PATH });
+const allowedEmails = parseAllowedEmails(env.HEJMLY_ALLOWED_EMAILS);
 
 const auth = createAuth({
   db,
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
   google: { clientId: env.GOOGLE_ID, clientSecret: env.GOOGLE_SECRET },
-  allowedEmails: parseAllowedEmails(env.HEJMLY_ALLOWED_EMAILS),
+  allowedEmails,
   useSecureCookies: process.env.NODE_ENV === "production",
   mcpResource,
 });
 
 const groceryService = createGroceryService(db);
 const recipeService = createRecipeService(db);
-const todoService = createTodoService(db);
+const todoService = createTodoService(db, {
+  isMember: (email) => isAllowedEmail(allowedEmails, email),
+});
 const assistantsService = createAssistantsService(db);
 const audit = createAuditRecorder(db);
 const cleanup = createCleanupScheduler({

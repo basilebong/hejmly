@@ -11,10 +11,12 @@ import {
   type TaskId,
   TaskIdSchema,
   type TaskTransition,
+  type TodoMember,
   transition,
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@hejmly/app-todo/shared";
+import type { UserId } from "@hejmly/core/shared";
 import {
   hashKey,
   mutationOptions,
@@ -30,6 +32,7 @@ import {
   createTaskKey,
   DELETE_PROJECT_KEY,
   deleteTaskKey,
+  MEMBERS_QUERY_KEY,
   PROJECTS_QUERY_KEY,
   projectMutationsKey,
   projectQueryKey,
@@ -37,6 +40,7 @@ import {
 import { pendingIds } from "./mutation-state.ts";
 
 export type TodoApi = {
+  fetchMembers: () => Promise<TodoMember[]>;
   fetchProjects: () => Promise<Project[]>;
   fetchProject: (id: ProjectId) => Promise<ProjectWithTasks>;
   createProject: (input: CreateProjectInput, idempotencyKey: string) => Promise<Project>;
@@ -109,6 +113,32 @@ const refreshAfterSettle = (
     }
   }, 0);
 };
+
+export const membersQuery = ({ api }: TodoCacheEnv) =>
+  queryOptions({
+    queryKey: MEMBERS_QUERY_KEY,
+    queryFn: api.fetchMembers,
+    staleTime: 5 * 60_000,
+  });
+
+const memberOf = (qc: QueryClient, id: UserId | null | undefined): TodoMember | null =>
+  id === null || id === undefined
+    ? null
+    : (qc.getQueryData<TodoMember[]>(MEMBERS_QUERY_KEY)?.find((m) => m.id === id) ?? null);
+
+const contentPatch = (qc: QueryClient, input: UpdateTaskInput): Partial<Task> => ({
+  ...(input.title !== undefined ? { title: input.title } : {}),
+  ...(input.notes !== undefined ? { notes: input.notes } : {}),
+  ...(input.dueOn !== undefined ? { dueOn: input.dueOn } : {}),
+  ...(input.assigneeId !== undefined ? { assignee: memberOf(qc, input.assigneeId) } : {}),
+});
+
+const contentRollback = (prev: Task, input: UpdateTaskInput): Partial<Task> => ({
+  ...(input.title !== undefined ? { title: prev.title } : {}),
+  ...(input.notes !== undefined ? { notes: prev.notes } : {}),
+  ...(input.dueOn !== undefined ? { dueOn: prev.dueOn } : {}),
+  ...(input.assigneeId !== undefined ? { assignee: prev.assignee } : {}),
+});
 
 export const projectsQuery = ({ qc, api }: TodoCacheEnv) =>
   queryOptions({
@@ -230,7 +260,7 @@ export const projectMutations = (
       queryKey: key,
     });
 
-  const patchTask = (taskId: TaskId, fields: Partial<Pick<Task, "title" | "notes" | "status">>) => {
+  const patchTask = (taskId: TaskId, fields: Partial<Task>) => {
     patchTasks((tasks) => tasks.map((t) => (t.id === taskId ? { ...t, ...fields } : t)));
   };
 
@@ -246,6 +276,8 @@ export const projectMutations = (
         title: input.title,
         notes: input.notes ?? null,
         status: { kind: "open" },
+        dueOn: input.dueOn ?? null,
+        assignee: memberOf(qc, input.assigneeId),
         createdAt: now,
         updatedAt: now,
         addedBy: author(),
@@ -307,30 +339,14 @@ export const projectMutations = (
     onMutate: async ({ taskId, input }) => {
       await qc.cancelQueries({ queryKey: key });
       const prev = taskById(taskId);
-      patchTasks((tasks) =>
-        tasks.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                ...(input.title !== undefined ? { title: input.title } : {}),
-                ...(input.notes !== undefined ? { notes: input.notes } : {}),
-                updatedAt: Date.now(),
-              }
-            : t,
-        ),
-      );
+      patchTask(taskId, { ...contentPatch(qc, input), updatedAt: Date.now() });
       onEdited();
       return { prev };
     },
     onError: (_e, { taskId, input }, ctx) => {
       if (!online()) return;
       const prev = ctx?.prev;
-      if (prev !== undefined) {
-        patchTask(taskId, {
-          ...(input.title !== undefined ? { title: prev.title } : {}),
-          ...(input.notes !== undefined ? { notes: prev.notes } : {}),
-        });
-      }
+      if (prev !== undefined) patchTask(taskId, contentRollback(prev, input));
       notify.error("Could not save task");
     },
     onSuccess: putTask,
