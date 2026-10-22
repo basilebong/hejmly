@@ -97,10 +97,11 @@ export const createAuth = (opts: CreateAuthOptions) => {
         enabled: true,
         maxAge: 60 * 5,
         // A cached session is served without reading the database, where boot
-        // revocation deletes a former member's session. Keying the cache version
-        // on membership sends their stale cache back to the database instead.
+        // revocation deletes a former member's session. A non-member gets a
+        // version no cookie can already carry, so their cache never matches and
+        // every read goes back to the database.
         version: (_session, user) =>
-          isAllowedEmail(opts.allowedEmails, user.email) ? "1" : "former-member",
+          isAllowedEmail(opts.allowedEmails, user.email) ? "1" : crypto.randomUUID(),
       },
     },
 

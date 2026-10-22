@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { parseUserId } from "../../shared/index.ts";
 import type { Db } from "../db/index.ts";
 import { googleProvisioningSource, withTestAuth } from "../test/with-test-auth.ts";
@@ -9,6 +10,7 @@ import {
   oauthConsents,
   oauthRefreshTokens,
   sessions,
+  users,
   verifications,
 } from "./schema.ts";
 
@@ -253,5 +255,40 @@ describe("membership", () => {
         expect((await getSession(memberCookie))?.user.email).toBe(MEMBER);
       },
     );
+  });
+
+  test("a non-member's session is never served from the cookie cache", async () => {
+    await withTestAuth({ allowedEmails: MEMBER }, async ({ auth, db, signSessionCookie }) => {
+      const ctx = await auth.$context;
+      const member = await ctx.internalAdapter.createUser(
+        { name: MEMBER, email: MEMBER },
+        googleProvisioningSource,
+      );
+      await db.update(users).set({ email: FORMER }).where(eq(users.id, member.id));
+      const now = new Date();
+      await db.insert(sessions).values({
+        id: "leftover-session",
+        token: "leftover-token",
+        userId: member.id,
+        expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+        createdAt: now,
+        updatedAt: now,
+      });
+      const token = `Hejmly.session_token=${await signSessionCookie("leftover-token")}`;
+
+      const first = await auth.handler(
+        new Request("http://localhost:5173/api/auth/get-session", { headers: { cookie: token } }),
+      );
+      const cache = first.headers
+        .getSetCookie()
+        .map((c) => c.split(";")[0] ?? "")
+        .find((c) => c.startsWith("Hejmly.session_data="));
+      if (cache === undefined) throw new Error("expected a session cache cookie");
+
+      await db.delete(sessions).where(eq(sessions.id, "leftover-session"));
+      expect(
+        await auth.api.getSession({ headers: new Headers({ cookie: `${token}; ${cache}` }) }),
+      ).toBeNull();
+    });
   });
 });

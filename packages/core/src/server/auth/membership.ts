@@ -1,6 +1,13 @@
-import { inArray } from "drizzle-orm";
+import { inArray, like } from "drizzle-orm";
 import * as v from "valibot";
-import { err, ok, parseUserId, type Result, type UserId } from "../../shared/index.ts";
+import {
+  err,
+  ok,
+  parseUserId,
+  type Result,
+  type UserId,
+  UserIdSchema,
+} from "../../shared/index.ts";
 import type { Db } from "../db/index.ts";
 import { isAllowedEmail } from "./allowlist.ts";
 import type { Auth } from "./index.ts";
@@ -37,10 +44,10 @@ const internalError = (cause: unknown): MembershipError => ({
 
 const authorizationCodeSchema = v.object({
   type: v.literal("authorization_code"),
-  userId: v.string(),
+  userId: UserIdSchema,
 });
 
-const authorizationCodeOwner = (value: string): string | null => {
+const authorizationCodeOwner = (value: string): UserId | null => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
@@ -90,9 +97,12 @@ export const createMembershipService = ({
       // The OAuth provider keeps an unexchanged authorization code as a
       // verification row whose JSON value names the user; left alone it could
       // still be traded for fresh tokens after this pass.
-      const revokedIds = new Set<string>(revoked);
+      const revokedIds = new Set<UserId>(revoked);
       const pendingCodes = (
-        await db.select({ id: verifications.id, value: verifications.value }).from(verifications)
+        await db
+          .select({ id: verifications.id, value: verifications.value })
+          .from(verifications)
+          .where(like(verifications.value, '%"authorization_code"%'))
       )
         .filter((row) => {
           const owner = authorizationCodeOwner(row.value);

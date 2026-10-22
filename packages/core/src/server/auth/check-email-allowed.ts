@@ -5,6 +5,7 @@ export const checkEmailAllowed = (allowed: ReadonlySet<string>, email: unknown):
   if (isAllowedEmail(allowed, email)) return;
   const shown = typeof email === "string" && email.length > 0 ? email : "<empty>";
   throw new APIError("FORBIDDEN", {
+    code: "EMAIL_NOT_ALLOWED",
     message: `Email "${shown}" is not on the Hejmly allowlist. Ask the admin to add it.`,
   });
 };

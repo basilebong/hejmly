@@ -112,4 +112,8 @@ describe("parseRuntimeEnv", () => {
     }
     expect(runtime("a@example.com, ").HEJMLY_ALLOWED_EMAILS).toBe("a@example.com, ");
   });
+
+  test("HEJMLY_ALLOWED_EMAILS rejects an entry that is not an email", () => {
+    expect(() => runtime("a@example.com,anna.example.com")).toThrow(/comma-separated emails/);
+  });
 });

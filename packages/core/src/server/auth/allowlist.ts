@@ -1,15 +1,11 @@
 import * as v from "valibot";
+import { splitEmailList } from "../../shared/index.ts";
 
 const emailSchema = v.pipe(v.string(), v.trim(), v.toLowerCase(), v.email());
 
 export const parseAllowedEmails = (raw: string | undefined): ReadonlySet<string> => {
-  if (raw === undefined || raw.trim() === "") return new Set();
-  const entries = raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-    .map((s) => v.parse(emailSchema, s));
-  return new Set(entries);
+  if (raw === undefined) return new Set();
+  return new Set(splitEmailList(raw).map((s) => v.parse(emailSchema, s)));
 };
 
 const normalize = (raw: unknown): string | null => {

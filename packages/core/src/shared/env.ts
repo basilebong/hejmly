@@ -17,11 +17,20 @@ const flagSchema = v.pipe(
 const urlSchema = v.pipe(v.string(), v.url());
 const nonEmptySchema = v.pipe(v.string(), v.minLength(1));
 const secretSchema = v.pipe(v.string(), v.minLength(32));
+export const splitEmailList = (raw: string): string[] =>
+  raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+const emailSchema = v.pipe(v.string(), v.email());
+
 const emailListSchema = v.pipe(
   v.string(),
+  v.check((raw) => splitEmailList(raw).length > 0, "must list at least one email"),
   v.check(
-    (raw) => raw.split(",").some((entry) => entry.trim().length > 0),
-    "must list at least one email",
+    (raw) => splitEmailList(raw).every((entry) => v.is(emailSchema, entry)),
+    "must be comma-separated emails",
   ),
 );
 
