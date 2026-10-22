@@ -1,4 +1,5 @@
 export { Avatar } from "./Avatar.tsx";
+export { DueBadge } from "./DueBadge.tsx";
 export { EmptyState } from "./EmptyState.tsx";
 export { Fab } from "./Fab.tsx";
 export { ProgressBar } from "./ProgressBar.tsx";
@@ -8,7 +9,7 @@ export { ProjectHeader } from "./ProjectHeader.tsx";
 export { ProjectRow } from "./ProjectRow.tsx";
 export { ProjectsTopBar } from "./ProjectsTopBar.tsx";
 export { ProjectsSkeleton, TasksSkeleton } from "./Skeletons.tsx";
-export { TaskActionsMenu } from "./TaskActionsMenu.tsx";
+export { type DetailTitleProps, TaskDetail } from "./TaskDetail.tsx";
 export { AddTaskForm, EditTaskForm } from "./TaskForms.tsx";
 export { TaskList } from "./TaskList.tsx";
 export { TaskRow, type TaskRowHandlers } from "./TaskRow.tsx";

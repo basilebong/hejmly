@@ -1,5 +1,5 @@
 import type { Db } from "@hejmly/core/server";
-import { asc, desc, eq, sql } from "@hejmly/core/server/drizzle";
+import { alias, asc, desc, eq, sql } from "@hejmly/core/server/drizzle";
 import { users } from "@hejmly/core/server/schema";
 import { err, isErr, ok, type Result, type UserId } from "@hejmly/core/shared";
 import { monotonicFactory } from "ulid";
@@ -7,22 +7,26 @@ import {
   blankToNull,
   type CreateProjectInput,
   type CreateTaskInput,
+  isTaskPatch,
   type Project,
   type ProjectId,
   type ProjectWithTasks,
   parseProjectId,
   parseTaskId,
+  TASK_PATCH_EMPTY,
   type Task,
   type TaskId,
   type TodoError,
+  type TodoMember,
   transition,
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "../shared/index.ts";
-import { todoProjects, todoTasks } from "./schema.ts";
-import { type AuthorRow, rowToProject, rowToTask, serializeStatus } from "./serialize.ts";
+import { type TaskInsert, todoProjects, todoTasks } from "./schema.ts";
+import { type AuthorRow, rowToProject, rowToTask, serializeStatus, toMember } from "./serialize.ts";
 
 export type TodoService = {
+  listMembers(): Promise<TodoMember[]>;
   listProjects(): Promise<Project[]>;
   getProject(id: ProjectId): Promise<Result<ProjectWithTasks, TodoError>>;
   createProject(input: CreateProjectInput, by: UserId): Promise<Result<Project, TodoError>>;
@@ -39,7 +43,17 @@ export type TodoService = {
   removeTask(id: TaskId): Promise<Result<{ id: TaskId }, TodoError>>;
 };
 
+export type TodoServiceOptions = { isMember: (email: string | null) => boolean };
+
 const authorColumns = { id: users.id, name: users.name, email: users.email } as const;
+
+const assignees = alias(users, "assignee");
+const assigneeColumns = {
+  id: assignees.id,
+  name: assignees.name,
+  email: assignees.email,
+} as const;
+const taskColumns = { task: todoTasks, author: authorColumns, assignee: assigneeColumns } as const;
 
 const projectColumns = {
   project: todoProjects,
@@ -48,10 +62,32 @@ const projectColumns = {
   done: sql`count(${todoTasks.completedAt})`.mapWith(Number),
 } as const;
 
-type TaskWithAuthor = { task: typeof todoTasks.$inferSelect; author: AuthorRow };
+type TaskWithPeople = {
+  task: typeof todoTasks.$inferSelect;
+  author: AuthorRow;
+  assignee: AuthorRow;
+};
 
-export const createTodoService = (db: Db): TodoService => {
+export const createTodoService = (db: Db, { isMember }: TodoServiceOptions): TodoService => {
   const nextId = monotonicFactory();
+
+  const selectTasks = () =>
+    db
+      .select(taskColumns)
+      .from(todoTasks)
+      .leftJoin(users, eq(users.id, todoTasks.addedByUserId))
+      .leftJoin(assignees, eq(assignees.id, todoTasks.assigneeUserId));
+
+  const toTask = (r: TaskWithPeople): Task => rowToTask(r.task, r.author, r.assignee);
+
+  const assigneeProblem = (
+    id: UserId | null | undefined,
+    found: readonly { email: string | null }[],
+  ): TodoError | null => {
+    if (id === null || id === undefined) return null;
+    const row = found[0];
+    return row !== undefined && isMember(row.email) ? null : { kind: "member_not_found", id };
+  };
 
   const fetchProject = async (id: ProjectId): Promise<Project | null> => {
     const rows = await db
@@ -66,13 +102,8 @@ export const createTodoService = (db: Db): TodoService => {
     return row === undefined ? null : rowToProject(row.project, row.author, row);
   };
 
-  const fetchTask = async (id: TaskId): Promise<TaskWithAuthor | null> => {
-    const rows = await db
-      .select({ task: todoTasks, author: authorColumns })
-      .from(todoTasks)
-      .leftJoin(users, eq(users.id, todoTasks.addedByUserId))
-      .where(eq(todoTasks.id, id))
-      .limit(1);
+  const fetchTask = async (id: TaskId): Promise<TaskWithPeople | null> => {
+    const rows = await selectTasks().where(eq(todoTasks.id, id)).limit(1);
     return rows[0] ?? null;
   };
 
@@ -82,6 +113,14 @@ export const createTodoService = (db: Db): TodoService => {
   };
 
   return {
+    async listMembers() {
+      const rows = await db.select(authorColumns).from(users);
+      return rows
+        .filter((r) => isMember(r.email))
+        .map(toMember)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    },
+
     async listProjects() {
       const rows = await db
         .select(projectColumns)
@@ -96,13 +135,10 @@ export const createTodoService = (db: Db): TodoService => {
     async getProject(id) {
       const project = await fetchProject(id);
       if (project === null) return err({ kind: "project_not_found", id });
-      const rows = await db
-        .select({ task: todoTasks, author: authorColumns })
-        .from(todoTasks)
-        .leftJoin(users, eq(users.id, todoTasks.addedByUserId))
+      const rows = await selectTasks()
         .where(eq(todoTasks.projectId, id))
         .orderBy(asc(todoTasks.createdAt), asc(todoTasks.id));
-      return ok({ project, tasks: rows.map((r) => rowToTask(r.task, r.author)) });
+      return ok({ project, tasks: rows.map(toTask) });
     },
 
     async createProject(input, by) {
@@ -155,54 +191,89 @@ export const createTodoService = (db: Db): TodoService => {
     },
 
     async createTask(projectId, input, by) {
-      const exists = await db
-        .select({ id: todoProjects.id })
-        .from(todoProjects)
-        .where(eq(todoProjects.id, projectId))
-        .limit(1);
-      if (exists[0] === undefined) return err({ kind: "project_not_found", id: projectId });
       const now = new Date();
       const id = parseTaskId(nextId());
-      const inserted = await db
-        .insert(todoTasks)
-        .values({
-          id,
-          projectId,
-          title: input.title,
-          notes: blankToNull(input.notes ?? null),
-          statusJson: serializeStatus({ kind: "open" }),
-          addedByUserId: by,
-          createdAt: now,
-          updatedAt: now,
-          completedAt: null,
-        })
-        .returning();
-      const row = inserted[0];
-      if (row === undefined) return err({ kind: "task_not_found", id });
-      return ok(rowToTask(row, await fetchAuthor(by)));
+      const problem = db.transaction(
+        (tx): TodoError | null => {
+          const project = tx
+            .select({ id: todoProjects.id })
+            .from(todoProjects)
+            .where(eq(todoProjects.id, projectId))
+            .limit(1)
+            .all();
+          if (project[0] === undefined) return { kind: "project_not_found", id: projectId };
+          const assigneeId = input.assigneeId;
+          const assignee =
+            assigneeId === undefined
+              ? []
+              : tx.select(authorColumns).from(users).where(eq(users.id, assigneeId)).limit(1).all();
+          const assigneeError = assigneeProblem(assigneeId, assignee);
+          if (assigneeError !== null) return assigneeError;
+          tx.insert(todoTasks)
+            .values({
+              id,
+              projectId,
+              title: input.title,
+              notes: blankToNull(input.notes ?? null),
+              statusJson: serializeStatus({ kind: "open" }),
+              dueOn: input.dueOn ?? null,
+              assigneeUserId: assigneeId ?? null,
+              addedByUserId: by,
+              createdAt: now,
+              updatedAt: now,
+              completedAt: null,
+            })
+            .run();
+          return null;
+        },
+        { behavior: "immediate" },
+      );
+      if (problem !== null) return err(problem);
+      const created = await fetchTask(id);
+      if (created === null) return err({ kind: "task_not_found", id });
+      return ok(toTask(created));
     },
 
     async updateTask(id, input) {
-      if (input.title === undefined && input.notes === undefined) {
-        return err({ kind: "invalid_input", message: "Provide a title or notes to update" });
-      }
-      const existing = await fetchTask(id);
-      if (existing === null) return err({ kind: "task_not_found", id });
-      const patch: { title?: string; notes?: string | null; updatedAt: Date } = {
-        updatedAt: new Date(),
-      };
+      if (!isTaskPatch(input)) return err({ kind: "invalid_input", message: TASK_PATCH_EMPTY });
+      const patch: Partial<Pick<TaskInsert, "title" | "notes" | "dueOn" | "assigneeUserId">> & {
+        updatedAt: Date;
+      } = { updatedAt: new Date() };
       if (input.title !== undefined) patch.title = input.title;
       if (input.notes !== undefined) patch.notes = blankToNull(input.notes);
-      const updated = await db.update(todoTasks).set(patch).where(eq(todoTasks.id, id)).returning();
-      const row = updated[0];
-      if (row === undefined) return err({ kind: "task_not_found", id });
-      return ok(rowToTask(row, existing.author));
+      if (input.dueOn !== undefined) patch.dueOn = input.dueOn;
+      if (input.assigneeId !== undefined) patch.assigneeUserId = input.assigneeId;
+      const problem = db.transaction(
+        (tx): TodoError | null => {
+          const task = tx
+            .select({ id: todoTasks.id })
+            .from(todoTasks)
+            .where(eq(todoTasks.id, id))
+            .limit(1)
+            .all();
+          if (task[0] === undefined) return { kind: "task_not_found", id };
+          const assigneeId = input.assigneeId;
+          const assignee =
+            assigneeId === undefined || assigneeId === null
+              ? []
+              : tx.select(authorColumns).from(users).where(eq(users.id, assigneeId)).limit(1).all();
+          const assigneeError = assigneeProblem(assigneeId, assignee);
+          if (assigneeError !== null) return assigneeError;
+          tx.update(todoTasks).set(patch).where(eq(todoTasks.id, id)).run();
+          return null;
+        },
+        { behavior: "immediate" },
+      );
+      if (problem !== null) return err(problem);
+      const updated = await fetchTask(id);
+      if (updated === null) return err({ kind: "task_not_found", id });
+      return ok(toTask(updated));
     },
 
     async completeTask(id, by) {
       const existing = await fetchTask(id);
       if (existing === null) return err({ kind: "task_not_found", id });
-      const current = rowToTask(existing.task, existing.author);
+      const current = toTask(existing);
       const at = Date.now();
       const next = transition(current.status, { kind: "complete", by, at });
       if (isErr(next)) return err(next.error);
@@ -213,13 +284,13 @@ export const createTodoService = (db: Db): TodoService => {
         .returning();
       const row = updated[0];
       if (row === undefined) return err({ kind: "task_not_found", id });
-      return ok(rowToTask(row, existing.author));
+      return ok(rowToTask(row, existing.author, existing.assignee));
     },
 
     async reopenTask(id) {
       const existing = await fetchTask(id);
       if (existing === null) return err({ kind: "task_not_found", id });
-      const current = rowToTask(existing.task, existing.author);
+      const current = toTask(existing);
       const next = transition(current.status, { kind: "reopen" });
       if (isErr(next)) return err(next.error);
       const updated = await db
@@ -229,7 +300,7 @@ export const createTodoService = (db: Db): TodoService => {
         .returning();
       const row = updated[0];
       if (row === undefined) return err({ kind: "task_not_found", id });
-      return ok(rowToTask(row, existing.author));
+      return ok(rowToTask(row, existing.author, existing.assignee));
     },
 
     async removeTask(id) {

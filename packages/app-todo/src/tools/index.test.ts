@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Auth, Db } from "@hejmly/core/server";
-import { createAuditRecorder } from "@hejmly/core/server";
+import { createAuditRecorder, isAllowedEmail, parseAllowedEmails } from "@hejmly/core/server";
+import { users } from "@hejmly/core/server/schema";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { parseUserId, type UserId } from "@hejmly/core/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -24,7 +25,9 @@ const seedUser = async (auth: Auth): Promise<UserId> => {
 const connect = async (db: Db, actor: UserId): Promise<Client> => {
   const server = new McpServer({ name: "Hejmly-test", version: "1.0.0" });
   registerTodoTools(server, {
-    service: createTodoService(db),
+    service: createTodoService(db, {
+      isMember: (email) => isAllowedEmail(parseAllowedEmails(TEST_EMAIL), email),
+    }),
     actor,
     audit: createAuditRecorder(db),
   });
@@ -109,6 +112,7 @@ describe("todo MCP tools", () => {
         "todo__add_project",
         "todo__add_task",
         "todo__complete_task",
+        "todo__list_members",
         "todo__list_projects",
         "todo__list_tasks",
         "todo__remove_project",
@@ -274,6 +278,88 @@ describe("todo MCP tools", () => {
       expect(auditMetadata(db, "todo__complete_task")).toEqual({
         taskId: dig,
         error: "task_not_found",
+      });
+    });
+  });
+
+  test("list_members names who can be assigned", async () => {
+    await withClient(async (client, actor, db) => {
+      const now = new Date();
+      await db.insert(users).values({
+        id: "u_eve",
+        name: "Eve",
+        email: "eve@example.com",
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const r = await call(client, "todo__list_members", {});
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent).toEqual({
+        members: [{ id: actor, name: "Basile", initial: "B" }],
+      });
+      expect(textOf(r)).toContain(`Basile (id: ${actor})`);
+      expect(auditActions(db)).toEqual(["todo__list_members"]);
+    });
+  });
+
+  test("add_task takes a due date and an assignee; update_task moves and clears them", async () => {
+    await withClient(async (client, actor) => {
+      const projectId = await addProject(client, "Garden");
+      const added = await call(client, "todo__add_task", {
+        projectId,
+        title: "Dig",
+        dueOn: "2026-10-31",
+        assigneeId: actor,
+      });
+      expect(added.isError).toBeFalsy();
+      expect(added.structuredContent).toMatchObject({
+        task: { dueOn: "2026-10-31", assignee: { id: actor, name: "Basile" } },
+      });
+      expect(textOf(added)).toContain("due 2026-10-31, assigned to Basile");
+      const taskId = v.parse(TaskContent, added.structuredContent).task.id;
+
+      const moved = await call(client, "todo__update_task", { taskId, dueOn: "2026-11-02" });
+      expect(moved.structuredContent).toMatchObject({
+        task: { dueOn: "2026-11-02", assignee: { id: actor } },
+      });
+
+      const cleared = await call(client, "todo__update_task", {
+        taskId,
+        dueOn: null,
+        assigneeId: null,
+      });
+      expect(cleared.structuredContent).toMatchObject({ task: { dueOn: null, assignee: null } });
+    });
+  });
+
+  test("an impossible due date is refused before the handler runs", async () => {
+    await withClient(async (client, _actor, db) => {
+      const projectId = await addProject(client, "Garden");
+      const r = await call(client, "todo__add_task", {
+        projectId,
+        title: "Dig",
+        dueOn: "2026-02-30",
+      });
+      expect(r.isError).toBe(true);
+      expect(auditActions(db)).toEqual(["todo__add_project"]);
+    });
+  });
+
+  test("assigning someone outside the household is a structured, audited error", async () => {
+    await withClient(async (client, _actor, db) => {
+      const projectId = await addProject(client, "Garden");
+      const r = await call(client, "todo__add_task", {
+        projectId,
+        title: "Dig",
+        assigneeId: "u_nobody",
+      });
+      expect(r.isError).toBe(true);
+      expect(r.structuredContent).toEqual({ error: { kind: "member_not_found", id: "u_nobody" } });
+      expect(textOf(r)).toContain("todo__list_members");
+      expect(auditMetadata(db, "todo__add_task")).toEqual({
+        projectId,
+        error: "member_not_found",
       });
     });
   });

@@ -122,7 +122,7 @@ const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<voi
             announcer: noopAnnouncer,
           },
           recipes: { service: createRecipeService(db) },
-          todo: { service: createTodoService(db) },
+          todo: { service: createTodoService(db, { isMember: () => true }) },
           push: pushFor(db),
         });
 

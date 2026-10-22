@@ -1,5 +1,7 @@
 import type { ProjectId } from "@hejmly/app-todo/shared";
 
+export const MEMBERS_QUERY_KEY = ["todo", "members"] as const;
+
 export const PROJECTS_QUERY_KEY = ["todo", "projects"] as const;
 
 export const projectQueryKey = (id: ProjectId) => ["todo", "project", id] as const;

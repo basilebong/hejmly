@@ -51,14 +51,19 @@ const migratedThrough = (tag: string): Database => {
   return db;
 };
 
-const upgradeFrom = (tag: string, seed: (db: Database) => void): Database => {
+const upgradeFrom = (
+  tag: string,
+  seed: (db: Database) => void,
+  throughTag: string = tag,
+): Database => {
   const db = new Database(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
   for (const f of migrationsBefore(tag)) applyMigration(db, f);
   seed(db);
+  const last = migrationUnderTest(throughTag);
   db.exec("BEGIN");
   try {
-    applyMigration(db, migrationUnderTest(tag));
+    for (const f of sqlFiles().filter((f) => f >= tag && f <= last)) applyMigration(db, f);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -320,6 +325,125 @@ describe("migration 0010 against a household with grocery items and recipes", ()
         { from: author, table: "users", to: "id", on_delete: "SET NULL" },
       ]);
     }
+  });
+});
+
+type ForeignKeyRow = { from: string; table: string; to: string; on_delete: string };
+
+const upgradedWithTodoData = (): Database =>
+  upgradeFrom(
+    "0011",
+    (db) => {
+      db.exec(
+        `INSERT INTO users (id,name,email,email_verified,created_at,updated_at) VALUES ('u1','B','b@e.com',1,1750000000000,1750000000000), ('u2','A','a@e.com',1,1750000000000,1750000000000)`,
+      );
+      db.exec(
+        `INSERT INTO todo_projects (id,name,description,created_by_user_id,created_at,updated_at) VALUES ('p1','Garden','Beds','u1',1750000000001,1750000000002)`,
+      );
+      db.exec(
+        `INSERT INTO todo_tasks (id,project_id,title,notes,status_json,added_by_user_id,created_at,updated_at,completed_at) VALUES ('t1','p1','Dig','Deep','{"kind":"open"}','u1',1750000000003,1750000000004,NULL), ('t2','p1','Sow',NULL,'{"kind":"done","doneAt":1750000000009,"doneBy":"u2"}','u2',1750000000005,1750000000006,1750000000009)`,
+      );
+    },
+    "0012",
+  );
+
+describe("migrations 0011-0012 against a household with to-do tasks", () => {
+  test("keeps every task column for column, with no due date and no assignee", () => {
+    const db = upgradedWithTodoData();
+    expect(rows(db, "SELECT * FROM todo_tasks ORDER BY id")).toEqual([
+      {
+        id: "t1",
+        project_id: "p1",
+        title: "Dig",
+        notes: "Deep",
+        status_json: '{"kind":"open"}',
+        due_on: null,
+        assignee_user_id: null,
+        added_by_user_id: "u1",
+        created_at: 1750000000003,
+        updated_at: 1750000000004,
+        completed_at: null,
+      },
+      {
+        id: "t2",
+        project_id: "p1",
+        title: "Sow",
+        notes: null,
+        status_json: '{"kind":"done","doneAt":1750000000009,"doneBy":"u2"}',
+        due_on: null,
+        assignee_user_id: null,
+        added_by_user_id: "u2",
+        created_at: 1750000000005,
+        updated_at: 1750000000006,
+        completed_at: 1750000000009,
+      },
+    ]);
+  });
+
+  test("removing an assignee unassigns their tasks and keeps them", () => {
+    const db = upgradedWithTodoData();
+    db.exec("UPDATE todo_tasks SET assignee_user_id = 'u2', due_on = '2026-10-31'");
+    db.exec("DELETE FROM users WHERE id = 'u2'");
+    expect(
+      rows(db, "SELECT id, assignee_user_id, added_by_user_id, due_on FROM todo_tasks ORDER BY id"),
+    ).toEqual([
+      { id: "t1", assignee_user_id: null, added_by_user_id: "u1", due_on: "2026-10-31" },
+      { id: "t2", assignee_user_id: null, added_by_user_id: null, due_on: "2026-10-31" },
+    ]);
+  });
+
+  test("deleting a project still deletes its tasks", () => {
+    const db = upgradedWithTodoData();
+    db.exec("DELETE FROM todo_projects WHERE id = 'p1'");
+    expect(rows(db, "SELECT id FROM todo_tasks")).toEqual([]);
+  });
+
+  test("leaves no rebuild table behind and passes a foreign key check", () => {
+    const db = upgradedWithTodoData();
+    expect(rows(db, "SELECT name FROM sqlite_master WHERE name LIKE '__new%'")).toEqual([]);
+    expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
+  });
+
+  test("produces the same schema as a database built from scratch", () => {
+    expect(schemaOf(upgradedWithTodoData())).toBe(schemaOf(migratedThrough("0012")));
+  });
+
+  test("adds only the two nullable columns and the assignee's SET NULL foreign key", () => {
+    const before = new Database(":memory:");
+    for (const f of migrationsBefore("0011")) applyMigration(before, f);
+    const after = migratedThrough("0012");
+    const shape = (db: Database) => ({
+      columns: db
+        .query<ColumnRow, []>(
+          `SELECT name, type, "notnull", dflt_value, pk FROM pragma_table_info('todo_tasks') ORDER BY name`,
+        )
+        .all(),
+      indexes: rows(
+        db,
+        `SELECT il.name, il."unique", group_concat(ii.name) AS cols FROM pragma_index_list('todo_tasks') il, pragma_index_info(il.name) ii GROUP BY il.name ORDER BY il.name`,
+      ),
+      foreignKeys: db
+        .query<ForeignKeyRow, []>(
+          `SELECT "from", "table", "to", on_delete FROM pragma_foreign_key_list('todo_tasks') ORDER BY "from"`,
+        )
+        .all(),
+    });
+    const was = shape(before);
+    const now = shape(after);
+    const added: ColumnRow[] = [
+      { name: "assignee_user_id", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
+      { name: "due_on", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
+    ];
+    expect(now.indexes).toEqual(was.indexes);
+    expect(now.columns).toEqual(
+      [...was.columns, ...added].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    expect(now.foreignKeys).toEqual(
+      [
+        ...was.foreignKeys,
+        { from: "assignee_user_id", table: "users", to: "id", on_delete: "SET NULL" },
+      ].sort((a, b) => a.from.localeCompare(b.from)),
+    );
   });
 });
 

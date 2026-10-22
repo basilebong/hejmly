@@ -3,8 +3,12 @@ import {
   type Auth,
   createRequireSession,
   type Db,
+  isAllowedEmail,
+  parseAllowedEmails,
   type SessionVariables,
 } from "@hejmly/core/server";
+import { eq } from "@hejmly/core/server/drizzle";
+import { users } from "@hejmly/core/server/schema";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { Hono } from "hono";
 import * as v from "valibot";
@@ -13,6 +17,8 @@ import { createTodoService } from "./service.ts";
 
 const TEST_EMAIL = "basile@example.com";
 const MEMBER_EMAIL = "anna@example.com";
+const OUTSIDER_EMAIL = "eve@example.com";
+const ALLOWED = `${TEST_EMAIL},${MEMBER_EMAIL}`;
 
 type TestApp = Hono<{ Variables: SessionVariables }>;
 
@@ -24,6 +30,7 @@ type TodoTestContext = {
   userId: string;
   db: Db;
   addMember: () => Promise<Member>;
+  addFormerMember: () => Promise<string>;
 };
 
 const seedSessionCookie = async (
@@ -39,18 +46,31 @@ const seedSessionCookie = async (
 };
 
 const withTodo = async (fn: (ctx: TodoTestContext) => Promise<void>): Promise<void> => {
-  await withTestAuth(
-    { allowedEmails: `${TEST_EMAIL},${MEMBER_EMAIL}` },
-    async ({ auth, db, signSessionCookie }) => {
-      const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
-      const app: TestApp = new Hono<{ Variables: SessionVariables }>()
-        .use("/api/*", createRequireSession(auth))
-        .route("/api/todo", createTodoRoutes({ service: createTodoService(db) }));
-      const addMember = () =>
-        seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
-      await fn({ app, cookie, userId, db, addMember });
-    },
-  );
+  await withTestAuth({ allowedEmails: ALLOWED }, async ({ auth, db, signSessionCookie }) => {
+    const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
+    const allowed = parseAllowedEmails(ALLOWED);
+    const service = createTodoService(db, {
+      isMember: (email) => isAllowedEmail(allowed, email),
+    });
+    const app: TestApp = new Hono<{ Variables: SessionVariables }>()
+      .use("/api/*", createRequireSession(auth))
+      .route("/api/todo", createTodoRoutes({ service }));
+    const addMember = () =>
+      seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
+    const addFormerMember = async (): Promise<string> => {
+      const now = new Date();
+      await db.insert(users).values({
+        id: "u_eve",
+        name: "Eve",
+        email: OUTSIDER_EMAIL,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return "u_eve";
+    };
+    await fn({ app, cookie, userId, db, addMember, addFormerMember });
+  });
 };
 
 const AuthorSchema = v.union([
@@ -78,6 +98,8 @@ const TaskSchema = v.object({
     v.object({ kind: v.literal("open") }),
     v.object({ kind: v.literal("done"), doneAt: v.number(), doneBy: v.string() }),
   ]),
+  dueOn: v.nullable(v.string()),
+  assignee: v.nullable(v.object({ id: v.string(), name: v.string(), initial: v.string() })),
   createdAt: v.number(),
   updatedAt: v.number(),
   addedBy: AuthorSchema,
@@ -127,7 +149,7 @@ const createTask = async (
   app: TestApp,
   cookie: string,
   projectId: string,
-  body: { title: string; notes?: string },
+  body: { title: string; notes?: string; dueOn?: string; assigneeId?: string },
 ): Promise<TaskResponse> => {
   const res = await send(app, cookie, "POST", `/api/todo/projects/${projectId}/tasks`, body);
   expect(res.status).toBe(201);
@@ -162,6 +184,7 @@ describe("todo routes", () => {
         ["PATCH", "/api/todo/tasks/t1", { done: true }],
         ["PATCH", "/api/todo/tasks/t1/content", { title: "Dig" }],
         ["DELETE", "/api/todo/tasks/t1"],
+        ["GET", "/api/todo/members"],
       ];
       for (const [method, path, body] of probes) {
         const res = await send(app, "", method, path, body);
@@ -481,6 +504,174 @@ describe("todo routes", () => {
         const again = await send(app, cookie, "DELETE", `/api/todo/tasks/${t.id}`);
         expect(again.status).toBe(404);
       });
+    });
+  });
+});
+
+describe("todo due dates and assignees", () => {
+  test("a task is created with a due date and a household member as assignee", async () => {
+    await withTodo(async ({ app, cookie, addMember }) => {
+      const anna = await addMember();
+      const project = await createProject(app, cookie, { name: "Garden" });
+      const task = await createTask(app, cookie, project.id, {
+        title: "Dig",
+        dueOn: "2026-10-31",
+        assigneeId: anna.userId,
+      });
+      expect(task).toMatchObject({
+        dueOn: "2026-10-31",
+        assignee: { id: anna.userId, name: "Anna", initial: "A" },
+      });
+      const detail = await read(
+        await send(app, cookie, "GET", `/api/todo/projects/${project.id}`),
+        ProjectDetail,
+      );
+      expect(detail.tasks[0]).toMatchObject({ dueOn: "2026-10-31", assignee: { id: anna.userId } });
+    });
+  });
+
+  test("a task without them has null due date and assignee", async () => {
+    await withTodo(async ({ app, cookie }) => {
+      const project = await createProject(app, cookie, { name: "Garden" });
+      const task = await createTask(app, cookie, project.id, { title: "Dig" });
+      expect(task).toMatchObject({ dueOn: null, assignee: null });
+    });
+  });
+
+  test("assigning a former member, or nobody that exists, is rejected", async () => {
+    await withTodo(async ({ app, cookie, addFormerMember }) => {
+      const eve = await addFormerMember();
+      const project = await createProject(app, cookie, { name: "Garden" });
+      for (const assigneeId of [eve, "u_missing"]) {
+        const res = await send(app, cookie, "POST", `/api/todo/projects/${project.id}/tasks`, {
+          title: "Dig",
+          assigneeId,
+        });
+        expect(res.status).toBe(400);
+        expect(await read(res, ErrorBody)).toEqual({ kind: "member_not_found", id: assigneeId });
+      }
+      const detail = await read(
+        await send(app, cookie, "GET", `/api/todo/projects/${project.id}`),
+        ProjectDetail,
+      );
+      expect(detail.tasks).toEqual([]);
+    });
+  });
+
+  test("an impossible due date is a 400", async () => {
+    await withTodo(async ({ app, cookie }) => {
+      const project = await createProject(app, cookie, { name: "Garden" });
+      const res = await send(app, cookie, "POST", `/api/todo/projects/${project.id}/tasks`, {
+        title: "Dig",
+        dueOn: "2026-02-30",
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  test("editing moves the due date, reassigns, and clears both with null", async () => {
+    await withTodo(async ({ app, cookie, userId, addMember }) => {
+      const anna = await addMember();
+      const project = await createProject(app, cookie, { name: "Garden" });
+      const task = await createTask(app, cookie, project.id, {
+        title: "Dig",
+        dueOn: "2026-10-31",
+        assigneeId: anna.userId,
+      });
+      const path = `/api/todo/tasks/${task.id}/content`;
+      const moved = await read(
+        await send(app, cookie, "PATCH", path, { dueOn: "2026-11-02", assigneeId: userId }),
+        TaskEnvelope,
+      );
+      expect(moved.task).toMatchObject({
+        title: "Dig",
+        dueOn: "2026-11-02",
+        assignee: { id: userId, name: "Basile" },
+      });
+      const cleared = await read(
+        await send(app, cookie, "PATCH", path, { dueOn: null, assigneeId: null }),
+        TaskEnvelope,
+      );
+      expect(cleared.task).toMatchObject({ dueOn: null, assignee: null });
+    });
+  });
+
+  test("reassigning to a former member is rejected and leaves the task unchanged", async () => {
+    await withTodo(async ({ app, cookie, addMember, addFormerMember }) => {
+      const anna = await addMember();
+      const eve = await addFormerMember();
+      const project = await createProject(app, cookie, { name: "Garden" });
+      const task = await createTask(app, cookie, project.id, {
+        title: "Dig",
+        assigneeId: anna.userId,
+      });
+      const res = await send(app, cookie, "PATCH", `/api/todo/tasks/${task.id}/content`, {
+        title: "Dig deep",
+        assigneeId: eve,
+      });
+      expect(res.status).toBe(400);
+      const detail = await read(
+        await send(app, cookie, "GET", `/api/todo/projects/${project.id}`),
+        ProjectDetail,
+      );
+      expect(detail.tasks[0]).toMatchObject({ title: "Dig", assignee: { id: anna.userId } });
+    });
+  });
+
+  test("an empty content patch is a 400", async () => {
+    await withTodo(async ({ app, cookie }) => {
+      const project = await createProject(app, cookie, { name: "Garden" });
+      const task = await createTask(app, cookie, project.id, { title: "Dig" });
+      const res = await send(app, cookie, "PATCH", `/api/todo/tasks/${task.id}/content`, {});
+      expect(res.status).toBe(400);
+    });
+  });
+
+  test("removing the assignee's account unassigns the task and keeps it", async () => {
+    await withTodo(async ({ app, cookie, db, addMember }) => {
+      const anna = await addMember();
+      const project = await createProject(app, cookie, { name: "Garden" });
+      await createTask(app, cookie, project.id, { title: "Dig", assigneeId: anna.userId });
+      await db.delete(users).where(eq(users.id, anna.userId));
+      const detail = await read(
+        await send(app, cookie, "GET", `/api/todo/projects/${project.id}`),
+        ProjectDetail,
+      );
+      expect(detail.tasks).toHaveLength(1);
+      expect(detail.tasks[0]?.assignee).toBeNull();
+    });
+  });
+
+  test("members lists signed-up household members by name, not former members", async () => {
+    await withTodo(async ({ app, cookie, userId, addMember, addFormerMember }) => {
+      const anna = await addMember();
+      await addFormerMember();
+      const res = await send(app, cookie, "GET", "/api/todo/members");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        members: [
+          { id: anna.userId, name: "Anna", initial: "A" },
+          { id: userId, name: "Basile", initial: "B" },
+        ],
+      });
+    });
+  });
+
+  test("a member without a name is listed without leaking their email", async () => {
+    await withTodo(async ({ app, cookie, db }) => {
+      const now = new Date();
+      await db.insert(users).values({
+        id: "u_blank",
+        name: "  ",
+        email: MEMBER_EMAIL,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const res = await send(app, cookie, "GET", "/api/todo/members");
+      const body = JSON.stringify(await res.json());
+      expect(body).not.toContain("@");
+      expect(body).toContain('{"id":"u_blank","name":"Member","initial":"M"}');
     });
   });
 });

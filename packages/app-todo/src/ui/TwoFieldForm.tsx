@@ -3,8 +3,6 @@ import { match } from "ts-pattern";
 import type { DraftResult } from "../shared/index.ts";
 
 export type TwoFieldFormCopy = {
-  heading: string;
-  subheading: string;
   primaryLabel: string;
   primaryPlaceholder: string;
   primaryCapitalize: "words" | "sentences";
@@ -59,14 +57,9 @@ export const TwoFieldForm = <T,>({
       onSubmit={handleSubmit}
       className="flex flex-1 flex-col px-5 pb-[max(env(safe-area-inset-bottom),1rem)]"
     >
-      <div>
-        <div className="font-semibold text-lg text-slate-900">{copy.heading}</div>
-        <p className="mt-0.5 text-slate-500 text-sm">{copy.subheading}</p>
-      </div>
-
-      <div className="mt-5 space-y-3">
+      <div className="mt-2 space-y-3">
         <label className="block">
-          <span className="font-medium text-slate-500 text-xs uppercase tracking-wider">
+          <span className="font-medium text-slate-600 text-xs uppercase tracking-wider">
             {copy.primaryLabel}
           </span>
           <input
@@ -79,12 +72,12 @@ export const TwoFieldForm = <T,>({
             onChange={(e) => setPrimary(e.currentTarget.value)}
             placeholder={copy.primaryPlaceholder}
             ref={primaryRef}
-            className="mt-1.5 flex min-h-12 w-full items-center rounded-xl border-[1.5px] border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900"
+            className="mt-1.5 flex min-h-12 w-full items-center rounded-xl border-[1.5px] border-slate-500 bg-white px-4 text-base text-slate-900 outline-none transition-colors placeholder:text-slate-500 focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
           />
         </label>
 
         <label className="block">
-          <span className="font-medium text-slate-500 text-xs uppercase tracking-wider">
+          <span className="font-medium text-slate-600 text-xs uppercase tracking-wider">
             {copy.secondaryLabel}{" "}
             <span className="font-normal text-slate-500 normal-case tracking-normal">
               — optional
@@ -98,7 +91,7 @@ export const TwoFieldForm = <T,>({
             value={secondary}
             onChange={(e) => setSecondary(e.currentTarget.value)}
             placeholder={copy.secondaryPlaceholder}
-            className="mt-1.5 flex min-h-12 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900"
+            className="mt-1.5 flex min-h-12 w-full resize-none rounded-xl border-[1.5px] border-slate-500 bg-white px-4 py-2.5 text-base text-slate-800 outline-none transition-colors placeholder:text-slate-500 focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
           />
         </label>
 
@@ -124,7 +117,7 @@ export const TwoFieldForm = <T,>({
         <button
           type="button"
           onClick={onCancel}
-          className="flex min-h-12 w-full items-center justify-center rounded-2xl text-base text-slate-600"
+          className="flex min-h-12 w-full items-center justify-center rounded-2xl text-base text-slate-700"
         >
           Cancel
         </button>

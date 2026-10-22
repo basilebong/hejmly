@@ -1,4 +1,6 @@
+import type { UserId } from "@hejmly/core/shared";
 import * as v from "valibot";
+import { type DueDate, DueDateSchema } from "./due.ts";
 import {
   type CreateProjectInput,
   type CreateTaskInput,
@@ -16,7 +18,7 @@ export type DraftResult<T> =
   | { kind: "unchanged" };
 
 export type ProjectDraft = { name: string; description: string };
-export type TaskDraft = { title: string; notes: string };
+export type TaskDraft = { title: string; notes: string; dueOn: string; assigneeId: UserId | null };
 
 type Pair = { kind: "ok"; primary: string; secondary: string | null } | DraftError;
 type DraftError = { kind: "error"; message: string };
@@ -62,24 +64,60 @@ export const diffProjectDraft = (
   return { kind: "ok", value: patch };
 };
 
-export const parseTaskDraft = (draft: TaskDraft): DraftResult<CreateTaskInput> => {
+type ParsedTask = {
+  title: string;
+  notes: string | null;
+  dueOn: DueDate | null;
+  assigneeId: UserId | null;
+};
+
+const parseTaskFields = (draft: TaskDraft): { kind: "ok"; task: ParsedTask } | DraftError => {
   const r = parsePair(TaskTitleSchema, TaskNotesSchema, draft.title, draft.notes);
   if (r.kind === "error") return r;
+  let dueOn: DueDate | null = null;
+  if (draft.dueOn.trim().length > 0) {
+    const due = v.safeParse(DueDateSchema, draft.dueOn.trim());
+    if (!due.success) return issueOf(due.issues);
+    dueOn = due.output;
+  }
   return {
     kind: "ok",
-    value: r.secondary === null ? { title: r.primary } : { title: r.primary, notes: r.secondary },
+    task: { title: r.primary, notes: r.secondary, dueOn, assigneeId: draft.assigneeId },
+  };
+};
+
+export const parseTaskDraft = (draft: TaskDraft): DraftResult<CreateTaskInput> => {
+  const r = parseTaskFields(draft);
+  if (r.kind === "error") return r;
+  const { title, notes, dueOn, assigneeId } = r.task;
+  return {
+    kind: "ok",
+    value: {
+      title,
+      ...(notes === null ? {} : { notes }),
+      ...(dueOn === null ? {} : { dueOn }),
+      ...(assigneeId === null ? {} : { assigneeId }),
+    },
   };
 };
 
 export const diffTaskDraft = (
-  initial: { title: string; notes: string | null },
+  initial: ParsedTask,
   draft: TaskDraft,
 ): DraftResult<UpdateTaskInput> => {
-  const r = parsePair(TaskTitleSchema, TaskNotesSchema, draft.title, draft.notes);
+  const r = parseTaskFields(draft);
   if (r.kind === "error") return r;
-  const patch: { title?: string; notes?: string | null } = {};
-  if (r.primary !== initial.title) patch.title = r.primary;
-  if (r.secondary !== initial.notes) patch.notes = r.secondary;
-  if (patch.title === undefined && patch.notes === undefined) return { kind: "unchanged" };
+  const next = r.task;
+  const patch: {
+    title?: string;
+    notes?: string | null;
+    dueOn?: DueDate | null;
+    assigneeId?: UserId | null;
+  } = {};
+  if (next.title !== initial.title) patch.title = next.title;
+  if (next.notes !== initial.notes) patch.notes = next.notes;
+  if (next.dueOn !== initial.dueOn) patch.dueOn = next.dueOn;
+  if (next.assigneeId !== initial.assigneeId) patch.assigneeId = next.assigneeId;
+  if (Object.keys(patch).length === 0) return { kind: "unchanged" };
   return { kind: "ok", value: patch };
 };

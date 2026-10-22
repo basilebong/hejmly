@@ -11,6 +11,7 @@ const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../..
 type WithTestAuthOptions = {
   allowedEmails?: string;
   baseURL?: string;
+  path?: string;
 };
 
 type TestAuthContext = {
@@ -23,7 +24,7 @@ export const withTestAuth = async <T>(
   options: WithTestAuthOptions,
   fn: (ctx: TestAuthContext) => Promise<T>,
 ): Promise<T> => {
-  const db = createDb({ path: ":memory:" });
+  const db = createDb({ path: options.path ?? ":memory:" });
   migrate(db, { migrationsFolder });
 
   const secret = "test-secret-must-be-at-least-32-chars-long";

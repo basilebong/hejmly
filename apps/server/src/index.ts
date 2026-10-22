@@ -46,7 +46,9 @@ const auth = createAuth({
 
 const groceryService = createGroceryService(db);
 const recipeService = createRecipeService(db);
-const todoService = createTodoService(db);
+const todoService = createTodoService(db, {
+  isMember: (email) => isAllowedEmail(allowedEmails, email),
+});
 const assistantsService = createAssistantsService(db);
 const audit = createAuditRecorder(db);
 const pushService = createPushService(db, {
