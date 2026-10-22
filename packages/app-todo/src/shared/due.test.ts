@@ -101,6 +101,17 @@ describe("clockInZone", () => {
     });
   });
 
+  test("follows daylight saving time", () => {
+    expect(clockInZone(new Date("2026-10-24T06:30:00Z"), "Europe/Berlin")).toEqual({
+      date: d("2026-10-24"),
+      hour: 8,
+    });
+    expect(clockInZone(new Date("2026-10-25T06:30:00Z"), "Europe/Berlin")).toEqual({
+      date: d("2026-10-25"),
+      hour: 7,
+    });
+  });
+
   test("midnight is hour 0, not 24", () => {
     expect(clockInZone(new Date("2026-10-22T22:00:00Z"), "Europe/Berlin").hour).toBe(0);
   });

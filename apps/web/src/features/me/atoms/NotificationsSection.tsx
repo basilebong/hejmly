@@ -91,6 +91,7 @@ type TopicRowProps = {
   title: string;
   description: string;
   reportsLoadError: boolean;
+  noteId: string;
 };
 
 const TopicRow = ({
@@ -100,6 +101,7 @@ const TopicRow = ({
   title,
   description,
   reportsLoadError,
+  noteId,
 }: TopicRowProps): ReactElement | null => {
   const { preferences } = notifications;
   if (preferences.kind === "error" && !reportsLoadError) return null;
@@ -124,7 +126,7 @@ const TopicRow = ({
           <Switch
             id={ids.control}
             aria-labelledby={ids.title}
-            aria-describedby={ids.hint}
+            aria-describedby={`${ids.hint} ${noteId}`}
             checked={preferences.value[topic]}
             onCheckedChange={(on) => notifications.setPreference({ [topic]: on })}
           />
@@ -139,6 +141,7 @@ const TopicRow = ({
 export const NotificationsSection = ({ notifications }: { notifications: Notifications }) => {
   const { state, device } = notifications;
   const headingId = useId();
+  const noteId = useId();
   const hint = deviceHint(state, device);
   const busy = device.kind === "turning_on" || device.kind === "turning_off";
   const usable = isDeviceSwitchUsable(state, device);
@@ -174,6 +177,7 @@ export const NotificationsSection = ({ notifications }: { notifications: Notific
           title="Grocery list"
           description="When someone adds to the list."
           reportsLoadError
+          noteId={noteId}
         />
         <TopicRow
           notifications={notifications}
@@ -182,9 +186,10 @@ export const NotificationsSection = ({ notifications }: { notifications: Notific
           title="Tasks due"
           description="At 8 in the morning, when tasks assigned to you are due or overdue."
           reportsLoadError={false}
+          noteId={noteId}
         />
       </div>
-      <p className="px-5 pt-2 text-slate-600 text-sm leading-snug">
+      <p id={noteId} className="px-5 pt-2 text-slate-600 text-sm leading-snug">
         Grocery and task settings apply to every device where notifications are on.
       </p>
     </section>

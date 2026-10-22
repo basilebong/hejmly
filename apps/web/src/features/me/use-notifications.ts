@@ -22,6 +22,7 @@ import {
 
 export const DEVICE_KEY = ["push", "device"] as const;
 export const PREFERENCES_KEY = ["push", "preferences"] as const;
+const SAVE_PREFERENCE_KEY = ["push", "preferences", "save"] as const;
 
 type DeviceRequest = { on: true; permission: Promise<NotificationPermission> } | { on: false };
 
@@ -133,6 +134,7 @@ export const useNotifications = (): Notifications => {
   });
 
   const savePreference = useMutation({
+    mutationKey: SAVE_PREFERENCE_KEY,
     mutationFn: updatePushPreferences,
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: PREFERENCES_KEY });
@@ -152,7 +154,9 @@ export const useNotifications = (): Notifications => {
       toast.error("Couldn't save that setting");
     },
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: PREFERENCES_KEY });
+      if (qc.isMutating({ mutationKey: SAVE_PREFERENCE_KEY }) === 1) {
+        void qc.invalidateQueries({ queryKey: PREFERENCES_KEY });
+      }
     },
   });
 

@@ -4,6 +4,7 @@ import { clockInZone, type DueDate, dueState } from "../shared/index.ts";
 import type { TodoService } from "./service.ts";
 
 export const REMINDER_HOUR = 8;
+export const REMINDER_LAST_HOUR = 11;
 export const REMINDER_CHECK_MS = 15 * 60 * 1000;
 
 const QUEUE_NAME = "todo-due-reminders";
@@ -17,6 +18,7 @@ export type DueRemindersOptions = {
   timeZone: string;
   dataPath: string;
   hour?: number;
+  lastHour?: number;
   checkEveryMs?: number;
 };
 
@@ -54,11 +56,13 @@ export const describeDueTasks = (
 
 export const createDueReminders = (opts: DueRemindersOptions): DueReminders => {
   const hour = opts.hour ?? REMINDER_HOUR;
+  const lastHour = opts.lastHour ?? REMINDER_LAST_HOUR;
 
   const remind = async (today: DueDate): Promise<number> => {
     let reminded = 0;
     for (const { assignee, tasks } of await opts.service.listDueByAssignee(today)) {
-      if (!(await opts.service.claimDueReminder(assignee.id, today))) continue;
+      const claim = await opts.service.claimDueReminder(assignee.id, today);
+      if (claim.kind === "err" || !claim.value.claimed) continue;
       const overdue = tasks.filter(
         (task) => task.dueOn !== null && dueState(task.dueOn, today).kind === "overdue",
       ).length;
@@ -74,9 +78,13 @@ export const createDueReminders = (opts: DueRemindersOptions): DueReminders => {
           url: "/todo",
         },
       );
-      if (result.kind === "err") {
+      const undelivered =
+        result.kind === "err" || (result.value.sent === 0 && result.value.failed > 0);
+      if (undelivered) {
         await opts.service.releaseDueReminder(assignee.id, today);
-        console.error("todo reminders: notify refused", result.error);
+        console.error("todo reminders: not delivered, will retry", {
+          error: result.kind === "err" ? result.error.kind : "delivery_failed",
+        });
         continue;
       }
       reminded += 1;
@@ -86,7 +94,7 @@ export const createDueReminders = (opts: DueRemindersOptions): DueReminders => {
 
   const runAt = async (now: Date): Promise<{ reminded: number }> => {
     const clock = clockInZone(now, opts.timeZone);
-    if (clock.hour < hour) return { reminded: 0 };
+    if (clock.hour < hour || clock.hour > lastHour) return { reminded: 0 };
     return { reminded: await remind(clock.date) };
   };
 
@@ -101,11 +109,20 @@ export const createDueReminders = (opts: DueRemindersOptions): DueReminders => {
   bq.on("error", (error) => {
     console.error("todo reminders worker error", { error: error.name });
   });
-  void bq.every(SCHEDULE_ID, opts.checkEveryMs ?? REMINDER_CHECK_MS, {}).catch((error: unknown) => {
-    console.error("todo reminders: could not schedule", {
-      error: error instanceof Error ? error.name : typeof error,
+  void bq
+    .every(
+      SCHEDULE_ID,
+      opts.checkEveryMs ?? REMINDER_CHECK_MS,
+      {},
+      {
+        jobOpts: { removeOnComplete: true },
+      },
+    )
+    .catch((error: unknown) => {
+      console.error("todo reminders: could not schedule", {
+        error: error instanceof Error ? error.name : typeof error,
+      });
     });
-  });
 
   return {
     runAt,

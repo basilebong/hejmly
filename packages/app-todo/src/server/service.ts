@@ -53,8 +53,11 @@ export type TodoService = {
   reopenTask(id: TaskId): Promise<Result<Task, TodoError>>;
   removeTask(id: TaskId): Promise<Result<{ id: TaskId }, TodoError>>;
   listDueByAssignee(today: DueDate): Promise<DueForAssignee[]>;
-  claimDueReminder(userId: UserId, day: DueDate): Promise<boolean>;
-  releaseDueReminder(userId: UserId, day: DueDate): Promise<void>;
+  claimDueReminder(userId: UserId, day: DueDate): Promise<Result<{ claimed: boolean }, TodoError>>;
+  releaseDueReminder(
+    userId: UserId,
+    day: DueDate,
+  ): Promise<Result<{ released: boolean }, TodoError>>;
 };
 
 export type DueForAssignee = { assignee: TodoMember; tasks: Task[] };
@@ -335,13 +338,15 @@ export const createTodoService = (db: Db, { isMember }: TodoServiceOptions): Tod
         .values({ userId, day, sentAt: new Date() })
         .onConflictDoNothing()
         .returning({ userId: todoDueReminders.userId });
-      return claimed.length > 0;
+      return ok({ claimed: claimed.length > 0 });
     },
 
     async releaseDueReminder(userId, day) {
-      await db
+      const released = await db
         .delete(todoDueReminders)
-        .where(and(eq(todoDueReminders.userId, userId), eq(todoDueReminders.day, day)));
+        .where(and(eq(todoDueReminders.userId, userId), eq(todoDueReminders.day, day)))
+        .returning({ userId: todoDueReminders.userId });
+      return ok({ released: released.length > 0 });
     },
 
     async listDueByAssignee(today) {

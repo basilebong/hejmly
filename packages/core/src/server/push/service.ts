@@ -10,6 +10,7 @@ import {
   PushMessageSchema,
   type PushPreferences,
   type PushPreferencesInput,
+  PushPreferencesSchema,
   type PushSubscriptionId,
   type PushSubscriptionInput,
   type PushTopic,
@@ -170,10 +171,10 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
   const preferences = async (userId: UserId): Promise<PushPreferences> => {
     const rows = await db.select().from(pushPreferences).where(eq(pushPreferences.userId, userId));
     const chosen = new Map(rows.map((r) => [r.topic, r.enabled]));
-    return {
-      grocery_added: chosen.get("grocery_added") ?? true,
-      todo_due: chosen.get("todo_due") ?? true,
-    };
+    return v.parse(
+      PushPreferencesSchema,
+      Object.fromEntries(PUSH_TOPICS.map((topic) => [topic, chosen.get(topic) ?? true])),
+    );
   };
 
   const notifyTargets = (topic: PushTopic, audience: PushAudience, now: Date) =>

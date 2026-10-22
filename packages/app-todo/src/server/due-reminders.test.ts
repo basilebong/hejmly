@@ -293,10 +293,11 @@ describe("due reminders", () => {
         timeZone: "UTC",
         dataPath: join(dir, "jobs.db"),
         hour: 0,
+        lastHour: 23,
         checkEveryMs: 200,
       });
       try {
-        const deadline = Date.now() + 5000;
+        const deadline = Date.now() + 3000;
         while (calls.length === 0 && Date.now() < deadline) {
           await new Promise((r) => setTimeout(r, 50));
         }
@@ -306,6 +307,63 @@ describe("due reminders", () => {
         shutdownManager();
         rmSync(dir, { recursive: true, force: true });
       }
+    });
+  });
+
+  test("a delivery the push service fails is retried at the next check that day", async () => {
+    const statuses = [503, 201];
+    await withTestAuth({}, async ({ db }) => {
+      await seed(db);
+      const push = createPushService(db, {
+        isMember: () => true,
+        subject: "https://hejmly.example",
+        send: async () => ({ status: statuses.shift() ?? 201 }),
+      });
+      const phone = await createTestDevice();
+      await push.subscribe(
+        { userId: ANNA, sessionId: parseSessionId(`s_${ANNA}`) },
+        phone.subscription(endpointOf("anna")),
+      );
+      const todo = createTodoService(db, { isMember: () => true });
+      const project = await todo.createProject({ name: "House" }, ANNA);
+      if (project.kind === "err") throw new Error("project not created");
+      await todo.createTask(
+        project.value.id,
+        { title: "Water plants", dueOn: parseDueDate("2026-10-22"), assigneeId: ANNA },
+        ANNA,
+      );
+      const dir = mkdtempSync(join(tmpdir(), "hejmly-due-"));
+      const reminders = createDueReminders({
+        service: todo,
+        push,
+        timeZone: "UTC",
+        dataPath: join(dir, "jobs.db"),
+      });
+      try {
+        expect(await reminders.runAt(new Date("2026-10-22T08:00:00Z"))).toEqual({ reminded: 0 });
+        expect(await reminders.runAt(new Date("2026-10-22T08:15:00Z"))).toEqual({ reminded: 1 });
+        expect(await reminders.runAt(new Date("2026-10-22T08:30:00Z"))).toEqual({ reminded: 0 });
+      } finally {
+        await reminders.close();
+        shutdownManager();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("only reminds in the morning, so a task assigned late waits for the next morning", async () => {
+    await withReminders("UTC", async (ctx) => {
+      await ctx.add("Water plants", "2026-10-22", ANNA);
+      expect(await ctx.reminders.runAt(new Date("2026-10-22T12:00:00Z"))).toEqual({
+        reminded: 0,
+      });
+      expect(await ctx.reminders.runAt(new Date("2026-10-22T22:15:00Z"))).toEqual({
+        reminded: 0,
+      });
+      expect(ctx.sent).toEqual([]);
+      expect(await ctx.reminders.runAt(new Date("2026-10-23T08:00:00Z"))).toEqual({
+        reminded: 1,
+      });
     });
   });
 });
