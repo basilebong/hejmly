@@ -3,6 +3,8 @@ import type { TodoMember } from "./types.ts";
 
 const firstName = (name: string): string => name.trim().split(/\s+/)[0] ?? name;
 
+const firstNameKey = (name: string): string => firstName(name).toLocaleLowerCase();
+
 export const assigneeLabels = (
   tasks: readonly { assignee: Pick<TodoMember, "id" | "name"> | null }[],
 ): Map<UserId, string> => {
@@ -10,13 +12,12 @@ export const assigneeLabels = (
   for (const t of tasks) if (t.assignee !== null) people.set(t.assignee.id, t.assignee.name);
   const idsByFirst = new Map<string, Set<UserId>>();
   for (const [id, name] of people) {
-    const first = firstName(name);
-    idsByFirst.set(first, (idsByFirst.get(first) ?? new Set<UserId>()).add(id));
+    const key = firstNameKey(name);
+    idsByFirst.set(key, (idsByFirst.get(key) ?? new Set<UserId>()).add(id));
   }
   const labels = new Map<UserId, string>();
   for (const [id, name] of people) {
-    const first = firstName(name);
-    labels.set(id, (idsByFirst.get(first)?.size ?? 0) > 1 ? name : first);
+    labels.set(id, (idsByFirst.get(firstNameKey(name))?.size ?? 0) > 1 ? name : firstName(name));
   }
   return labels;
 };

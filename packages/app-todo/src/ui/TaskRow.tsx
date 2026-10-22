@@ -151,6 +151,7 @@ export const TaskRow = ({
           type="button"
           onClick={(e) => onOpen(e.currentTarget)}
           aria-haspopup="dialog"
+          data-task-open=""
           className="-my-1 flex min-h-11 min-w-0 flex-1 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
         >
           <span className="min-w-0 flex-1">

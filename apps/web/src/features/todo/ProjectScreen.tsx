@@ -136,17 +136,20 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const meId = me.kind === "user" ? me.id : null;
   const today = useToday();
   const opener = useRef<HTMLElement | null>(null);
+  const fab = useRef<HTMLButtonElement | null>(null);
   const drawerNow = useRef(drawer);
   useEffect(() => {
     drawerNow.current = drawer;
   }, [drawer]);
   const restoreFocus = (): void => {
     if (drawerNow.current.kind !== "none") return;
-    if (opener.current?.isConnected) {
-      opener.current.focus();
-      return;
-    }
-    document.querySelector<HTMLElement>("main [aria-haspopup='dialog']")?.focus();
+    if (opener.current?.isConnected) opener.current.focus();
+    else fab.current?.focus();
+  };
+  const neighbourOf = (row: HTMLElement | null): HTMLElement | null => {
+    const item = row?.closest("li");
+    const next = item?.nextElementSibling ?? item?.previousElementSibling;
+    return next?.querySelector<HTMLElement>("[data-task-open]") ?? null;
   };
   const backToTask = (current: DrawerState): DrawerState =>
     current.kind === "edit_task" ? { kind: "task", id: current.id } : DRAWER_NONE;
@@ -262,7 +265,10 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
               opener.current = trigger;
               setDrawer({ kind: "edit_project" });
             }}
-            onRemove={() => setDrawer({ kind: "remove_project" })}
+            onRemove={(trigger) => {
+              opener.current = trigger;
+              setDrawer({ kind: "remove_project" });
+            }}
           />
         }
       />
@@ -277,6 +283,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         />
       )}
       <Fab
+        ref={fab}
         onClick={(e) => {
           opener.current = e.currentTarget;
           setDrawer({ kind: "add_task" });
@@ -366,6 +373,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         description={`“${removingTask?.title ?? ""}” will be deleted for everyone in the household. This can't be undone.`}
         confirmLabel="Delete task"
         onConfirm={() => {
+          opener.current = neighbourOf(opener.current);
           if (removingTask !== null) removeTask.mutate(removingTask.id);
           setDrawer(DRAWER_NONE);
         }}
@@ -386,6 +394,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
           void navigate({ to: "/todo" });
         }}
         onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
       />
     </Shell>
   );

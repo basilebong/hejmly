@@ -30,4 +30,10 @@ describe("assigneeLabels", () => {
     expect(labels.get(parseUserId("b"))).toBe("Anna Weber");
     expect(labels.get(parseUserId("c"))).toBe("Basile");
   });
+
+  test("treats first names that differ only in case as the same", () => {
+    const labels = assigneeLabels([person("a", "anna keller"), person("b", "Anna Weber")]);
+    expect(labels.get(parseUserId("a"))).toBe("anna keller");
+    expect(labels.get(parseUserId("b"))).toBe("Anna Weber");
+  });
 });

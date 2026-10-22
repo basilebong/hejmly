@@ -7,7 +7,7 @@ import { menuContentClass, menuItemClass } from "./menu.ts";
 type ProjectActionsMenuProps = {
   projectName: string;
   onEdit: (trigger: HTMLElement | null) => void;
-  onRemove: () => void;
+  onRemove: (trigger: HTMLElement | null) => void;
 };
 
 export const ProjectActionsMenu = ({
@@ -43,7 +43,10 @@ export const ProjectActionsMenu = ({
             Edit project
           </DropdownMenu.Item>
           <DropdownMenu.Separator className="mx-3 my-1 h-px bg-slate-100" />
-          <DropdownMenu.Item onSelect={onRemove} className={cn(menuItemClass, "text-rose-600")}>
+          <DropdownMenu.Item
+            onSelect={() => onRemove(trigger.current)}
+            className={cn(menuItemClass, "text-rose-600")}
+          >
             <TrashIcon size={18} />
             Delete project
           </DropdownMenu.Item>
