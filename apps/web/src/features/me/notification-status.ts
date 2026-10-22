@@ -6,7 +6,7 @@ import type { PushState } from "@/lib/push-state";
 
 export type DeviceView =
   | { kind: "checking" }
-  | { kind: "check_failed" }
+  | { kind: "check_failed"; retrying: boolean }
   | { kind: "no_worker" }
   | { kind: "turning_on" }
   | { kind: "turning_off" }
@@ -19,7 +19,7 @@ export type DeviceNotice = "declined" | "browser_failed";
 
 export type DeviceQuery =
   | { kind: "pending" }
-  | { kind: "error" }
+  | { kind: "error"; retrying: boolean }
   | { kind: "ready"; status: DeviceStatus };
 
 export type DeviceViewInput = {
@@ -34,7 +34,7 @@ export const deviceViewOf = ({ query, busy, notice }: DeviceViewInput): DeviceVi
   return match(query)
     .returnType<DeviceView>()
     .with({ kind: "pending" }, () => ({ kind: "checking" }))
-    .with({ kind: "error" }, () => ({ kind: "check_failed" }))
+    .with({ kind: "error" }, ({ retrying }) => ({ kind: "check_failed", retrying }))
     .with({ kind: "ready", status: { kind: "no_worker" } }, () => ({ kind: "no_worker" }))
     .with({ kind: "ready", status: { kind: "on" } }, () => ({ kind: "on" }))
     .with({ kind: "ready", status: { kind: "off" } }, () =>
@@ -43,20 +43,20 @@ export const deviceViewOf = ({ query, busy, notice }: DeviceViewInput): DeviceVi
     .exhaustive();
 };
 
-export type HintAction = "retry" | "reload";
+export type HintAction = { kind: "retry" | "reload"; pending: boolean };
 export type Hint = { text: string; action?: HintAction };
 
 const viewHint = (view: DeviceView): Hint =>
   match(view)
     .returnType<Hint>()
     .with({ kind: "checking" }, () => ({ text: "Checking this device…" }))
-    .with({ kind: "check_failed" }, () => ({
+    .with({ kind: "check_failed" }, ({ retrying }) => ({
       text: "Couldn't check this device.",
-      action: "retry",
+      action: { kind: "retry", pending: retrying },
     }))
     .with({ kind: "no_worker" }, () => ({
       text: "Hejmly is still setting up on this device.",
-      action: "reload",
+      action: { kind: "reload", pending: false },
     }))
     .with({ kind: "turning_on" }, () => ({ text: "Turning on…" }))
     .with({ kind: "turning_off" }, () => ({ text: "Turning off…" }))
@@ -70,7 +70,7 @@ const viewHint = (view: DeviceView): Hint =>
       text: "Notifications weren't allowed. Tap the switch to try again. If no prompt appears, allow them in the site or app settings.",
     }))
     .with({ kind: "browser_failed" }, () => ({
-      text: "This browser couldn't set up notifications. Try again later, or use another browser on this device.",
+      text: "This browser couldn't set up notifications. Try again later.",
     }))
     .exhaustive();
 

@@ -1,12 +1,12 @@
 import { BasketIcon, BellIcon } from "@phosphor-icons/react";
-import { type ReactElement, type ReactNode, useId } from "react";
+import { type ReactElement, type ReactNode, useEffect, useId, useRef } from "react";
 
 import { Switch } from "@/components/ui/switch";
 import { deviceHint, type HintAction, isDeviceSwitchUsable } from "../notification-status";
 import type { Notifications } from "../use-notifications";
 import { SectionLabel } from "./SectionLabel";
 
-type Action = { label: string; onClick: () => void };
+type Action = { label: string; pending: boolean; onClick: () => void };
 
 type RowProps = {
   icon: ReactNode;
@@ -20,6 +20,17 @@ const Row = ({ icon, title, description, action, control }: RowProps): ReactElem
   const controlId = useId();
   const titleId = useId();
   const hintId = useId();
+  const refocus = useRef(false);
+  const hasAction = action !== undefined;
+
+  useEffect(() => {
+    if (hasAction || !refocus.current) return;
+    refocus.current = false;
+    if (document.activeElement === null || document.activeElement === document.body) {
+      document.getElementById(controlId)?.focus();
+    }
+  }, [hasAction, controlId]);
+
   return (
     <div className="flex min-h-16 items-center gap-3 px-5 py-3">
       <span
@@ -33,17 +44,26 @@ const Row = ({ icon, title, description, action, control }: RowProps): ReactElem
           <span id={titleId} className="block font-medium text-base text-slate-900">
             {title}
           </span>
-          <span id={hintId} className="mt-0.5 block text-slate-600 text-sm leading-snug">
+          <span
+            id={hintId}
+            aria-live="polite"
+            className="mt-0.5 block text-slate-600 text-sm leading-snug"
+          >
             {description}
           </span>
         </label>
         {action !== undefined && (
           <button
             type="button"
-            onClick={action.onClick}
+            aria-disabled={action.pending || undefined}
+            onClick={() => {
+              if (action.pending) return;
+              refocus.current = true;
+              action.onClick();
+            }}
             className="mt-1 -ml-1 inline-flex min-h-11 items-center rounded-md px-1 font-medium text-slate-900 text-sm underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
           >
-            {action.label}
+            {action.pending ? "Checking…" : action.label}
           </button>
         )}
       </div>
@@ -57,9 +77,10 @@ const SwitchSkeleton = (): ReactElement => (
 );
 
 const actionFor = (action: HintAction | undefined, retry: () => void): Action | undefined => {
-  if (action === "retry") return { label: "Try again", onClick: retry };
-  if (action === "reload") return { label: "Reload", onClick: () => window.location.reload() };
-  return undefined;
+  if (action === undefined) return undefined;
+  return action.kind === "retry"
+    ? { label: "Try again", pending: action.pending, onClick: retry }
+    : { label: "Reload", pending: action.pending, onClick: () => window.location.reload() };
 };
 
 export const NotificationsSection = ({ notifications }: { notifications: Notifications }) => {
@@ -103,7 +124,11 @@ export const NotificationsSection = ({ notifications }: { notifications: Notific
           }
           action={
             preferences.kind === "error"
-              ? { label: "Try again", onClick: notifications.retryPreferences }
+              ? {
+                  label: "Try again",
+                  pending: preferences.retrying,
+                  onClick: notifications.retryPreferences,
+                }
               : undefined
           }
           control={(ids) =>

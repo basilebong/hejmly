@@ -22,7 +22,7 @@ type DeviceRequest = { on: true; permission: Promise<NotificationPermission> } |
 
 export type PreferencesView =
   | { kind: "loading" }
-  | { kind: "error" }
+  | { kind: "error"; retrying: boolean }
   | { kind: "ready"; value: PushPreferences };
 
 export type Notifications = {
@@ -146,11 +146,13 @@ export const useNotifications = (): Notifications => {
     onSuccess: (saved) => qc.setQueryData<PushPreferences>(PREFERENCES_KEY, saved),
   });
 
+  // A refetch of a query without data resets its status to pending, so isError
+  // would unmount the focused "Try again" mid-retry; errorUpdateCount survives.
   const deviceQuery: DeviceQuery =
     device.data !== undefined
       ? { kind: "ready", status: device.data }
-      : device.isError && !device.isFetching
-        ? { kind: "error" }
+      : device.errorUpdateCount > 0
+        ? { kind: "error", retrying: device.isFetching }
         : { kind: "pending" };
 
   const busy = toggleDevice.isPending ? (toggleDevice.variables?.on ? "on" : "off") : null;
@@ -160,8 +162,9 @@ export const useNotifications = (): Notifications => {
     device: deviceViewOf({ query: deviceQuery, busy, notice }),
     setDevice: (on) => {
       if (toggleDevice.isPending) return;
-      // WebKit only shows the prompt when requestPermission runs inside the tap
-      // itself, not after an await: https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/
+      // WebKit only allows the permission request "in response to direct user
+      // interaction", so it runs here in the tap handler rather than inside the
+      // mutation: https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/
       toggleDevice.mutate(
         on ? { on: true, permission: Notification.requestPermission() } : { on: false },
       );
@@ -170,8 +173,8 @@ export const useNotifications = (): Notifications => {
     preferences:
       preferences.data !== undefined
         ? { kind: "ready", value: preferences.data }
-        : preferences.isError && !preferences.isFetching
-          ? { kind: "error" }
+        : preferences.errorUpdateCount > 0
+          ? { kind: "error", retrying: preferences.isFetching }
           : { kind: "loading" },
     retryPreferences: () => void preferences.refetch(),
     setPreference: (input) => savePreference.mutate(input),

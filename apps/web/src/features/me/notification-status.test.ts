@@ -12,7 +12,10 @@ const idle = { busy: null, notice: null } as const;
 describe("deviceViewOf", () => {
   test("follows the device query while nothing is in flight", () => {
     expect(deviceViewOf({ ...idle, query: { kind: "pending" } })).toEqual({ kind: "checking" });
-    expect(deviceViewOf({ ...idle, query: { kind: "error" } })).toEqual({ kind: "check_failed" });
+    expect(deviceViewOf({ ...idle, query: { kind: "error", retrying: false } })).toEqual({
+      kind: "check_failed",
+      retrying: false,
+    });
     expect(deviceViewOf({ ...idle, query: { kind: "ready", status: { kind: "on" } } })).toEqual({
       kind: "on",
     });
@@ -24,7 +27,9 @@ describe("deviceViewOf", () => {
   test("a change in flight wins over what the query last said", () => {
     const off = { kind: "ready", status: { kind: "off" } } as const;
     expect(deviceViewOf({ ...idle, busy: "on", query: off })).toEqual({ kind: "turning_on" });
-    expect(deviceViewOf({ ...idle, busy: "off", query: { kind: "error" } })).toEqual({
+    expect(
+      deviceViewOf({ ...idle, busy: "off", query: { kind: "error", retrying: false } }),
+    ).toEqual({
       kind: "turning_off",
     });
   });
@@ -51,13 +56,23 @@ describe("deviceHint", () => {
   const available = { kind: "available" } as const;
 
   test("a failed check offers a retry and never tells the person to reload", () => {
-    const hint = deviceHint(available, { kind: "check_failed" });
-    expect(hint.action).toBe("retry");
+    const hint = deviceHint(available, { kind: "check_failed", retrying: false });
+    expect(hint.action).toEqual({ kind: "retry", pending: false });
     expect(hint.text).not.toMatch(/reload/i);
   });
 
+  test("a retry in flight keeps the same action, marked pending, so focus has somewhere to stay", () => {
+    expect(deviceHint(available, { kind: "check_failed", retrying: true }).action).toEqual({
+      kind: "retry",
+      pending: true,
+    });
+  });
+
   test("a device without a service worker yet offers a reload button", () => {
-    expect(deviceHint(available, { kind: "no_worker" }).action).toBe("reload");
+    expect(deviceHint(available, { kind: "no_worker" }).action).toEqual({
+      kind: "reload",
+      pending: false,
+    });
   });
 
   test("says what is happening while a change is in flight", () => {
@@ -74,7 +89,9 @@ describe("deviceHint", () => {
   });
 
   test("a browser that could not subscribe keeps saying so after the toast is gone", () => {
-    expect(deviceHint(available, { kind: "browser_failed" }).text).toMatch(/couldn't set up/i);
+    const text = deviceHint(available, { kind: "browser_failed" }).text;
+    expect(text).toMatch(/couldn't set up/i);
+    expect(text).not.toMatch(/another browser/i);
   });
 
   test("the environment wins over the device view", () => {
@@ -94,9 +111,12 @@ describe("isDeviceSwitchUsable", () => {
       isDeviceSwitchUsable({ kind: "available" }, { kind }),
     );
     expect(usable).toEqual([true, true, true, true]);
-    for (const kind of ["checking", "check_failed", "no_worker"] as const) {
+    for (const kind of ["checking", "no_worker"] as const) {
       expect(isDeviceSwitchUsable({ kind: "available" }, { kind })).toBe(false);
     }
+    expect(
+      isDeviceSwitchUsable({ kind: "available" }, { kind: "check_failed", retrying: false }),
+    ).toBe(false);
     expect(isDeviceSwitchUsable({ kind: "blocked" }, { kind: "off" })).toBe(false);
   });
 });
