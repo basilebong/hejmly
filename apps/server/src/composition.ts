@@ -1,4 +1,8 @@
-import type { CleanupScheduler, GroceryService } from "@hejmly/app-grocery/server";
+import type {
+  CleanupScheduler,
+  GroceryAnnouncer,
+  GroceryService,
+} from "@hejmly/app-grocery/server";
 import { createGroceryRoutes } from "@hejmly/app-grocery/server";
 import type { RecipeService } from "@hejmly/app-recipes/server";
 import { createRecipeRoutes } from "@hejmly/app-recipes/server";
@@ -10,8 +14,10 @@ import {
   type Auth,
   createAssistantsRoutes,
   createIdempotency,
+  createPushRoutes,
   createRequireSession,
   type Db,
+  type PushService,
 } from "@hejmly/core/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -39,6 +45,10 @@ export type ComposeOptions = {
   grocery: {
     service: GroceryService;
     cleanup: CleanupScheduler;
+    announcer: GroceryAnnouncer;
+  };
+  push: {
+    service: PushService;
   };
   recipes: {
     service: RecipeService;
@@ -60,6 +70,7 @@ export const createApp = ({
   grocery,
   recipes,
   todo,
+  push,
 }: ComposeOptions) =>
   new Hono()
     .use("*", logger())
@@ -79,6 +90,7 @@ export const createApp = ({
         todo: todo.service,
         audit,
         cleanup: grocery.cleanup,
+        announcer: grocery.announcer,
       }),
     )
     .use("/api/*", csrf({ origin: baseURL }))
@@ -86,6 +98,7 @@ export const createApp = ({
     .use("/api/*", createIdempotency(db))
     .get("/api/me", (c) => c.json({ user: c.get("user") }))
     .route("/api/me/assistants", createAssistantsRoutes({ service: assistants.service, audit }))
+    .route("/api/push", createPushRoutes({ service: push.service }))
     .route("/api/grocery", createGroceryRoutes(grocery))
     .route("/api/recipes", createRecipeRoutes(recipes))
     .route("/api/todo", createTodoRoutes(todo))

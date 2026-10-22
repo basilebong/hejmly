@@ -12,12 +12,14 @@ import {
   TogglePurchasedInputSchema,
   UpdateItemInputSchema,
 } from "../shared/index.ts";
+import type { GroceryAnnouncer } from "./announcer.ts";
 import type { CleanupScheduler } from "./cleanup-scheduler.ts";
 import type { GroceryService } from "./service.ts";
 
 export type GroceryDeps = {
   service: GroceryService;
   cleanup: CleanupScheduler;
+  announcer: GroceryAnnouncer;
 };
 
 const handleError = (e: GroceryError) =>
@@ -81,6 +83,7 @@ export const createGroceryRoutes = (deps: GroceryDeps) =>
         const e = handleError(result.error);
         return c.json(e.body, e.status);
       }
+      await safely("announce", deps.announcer.itemAdded(result.value));
       return c.json({ item: result.value }, 201);
     })
     .patch("/items/:id", async (c) => {

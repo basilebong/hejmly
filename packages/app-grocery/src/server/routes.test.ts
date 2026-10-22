@@ -9,6 +9,7 @@ import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test
 import { Hono } from "hono";
 import * as v from "valibot";
 import { type GroceryItemId, parseGroceryItemId } from "../shared/index.ts";
+import type { GroceryAnnouncer } from "./announcer.ts";
 import type { CleanupScheduler } from "./cleanup-scheduler.ts";
 import { createGroceryRoutes } from "./routes.ts";
 import { createGroceryService } from "./service.ts";
@@ -35,6 +36,19 @@ const createStubCleanup = (): { scheduler: CleanupScheduler; calls: CleanupCalls
   return { scheduler, calls };
 };
 
+const createStubAnnouncer = (): { announcer: GroceryAnnouncer; announced: GroceryItemId[] } => {
+  const announced: GroceryItemId[] = [];
+  return {
+    announced,
+    announcer: {
+      async itemAdded(item) {
+        announced.push(item.id);
+      },
+      async close() {},
+    },
+  };
+};
+
 type TestApp = Hono<{ Variables: SessionVariables }>;
 
 type GroceryTestContext = {
@@ -44,6 +58,7 @@ type GroceryTestContext = {
   db: Db;
   auth: Auth;
   cleanup: CleanupCalls;
+  announced: GroceryItemId[];
   addMember: () => Promise<{ userId: string; cookie: string }>;
 };
 
@@ -68,10 +83,11 @@ const withGrocery = async (fn: (ctx: GroceryTestContext) => Promise<void>): Prom
         seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
       const service = createGroceryService(db);
       const { scheduler, calls } = createStubCleanup();
+      const { announcer, announced } = createStubAnnouncer();
       const app: TestApp = new Hono<{ Variables: SessionVariables }>()
         .use("/api/*", createRequireSession(auth))
-        .route("/api/grocery", createGroceryRoutes({ service, cleanup: scheduler }));
-      await fn({ app, cookie, userId, db, auth, cleanup: calls, addMember });
+        .route("/api/grocery", createGroceryRoutes({ service, cleanup: scheduler, announcer }));
+      await fn({ app, cookie, userId, db, auth, cleanup: calls, announced, addMember });
     },
   );
 };
@@ -526,6 +542,28 @@ describe("grocery routes", () => {
         const list = await app.request("/api/grocery/items", { headers: { cookie } });
         expect(await parseBody(list, ItemListSchema)).toEqual({ items: [] });
       });
+    });
+  });
+});
+
+describe("grocery announcements", () => {
+  test("a created item is announced, a rejected one is not", async () => {
+    await withGrocery(async ({ app, cookie, announced }) => {
+      const res = await app.request("/api/grocery/items", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ name: "Milk" }),
+      });
+      expect(res.status).toBe(201);
+      const created = v.parse(v.object({ item: v.object({ id: v.string() }) }), await res.json());
+      expect(announced).toEqual([parseGroceryItemId(created.item.id)]);
+      const bad = await app.request("/api/grocery/items", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ name: "" }),
+      });
+      expect(bad.status).toBe(400);
+      expect(announced).toHaveLength(1);
     });
   });
 });

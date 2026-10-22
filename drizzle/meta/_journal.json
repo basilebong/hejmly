@@ -78,6 +78,13 @@
       "when": 1792519275754,
       "tag": "0010_superb_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792693122530,
+      "tag": "0011_mysterious_kang",
+      "breakpoints": true
     }
   ]
 }

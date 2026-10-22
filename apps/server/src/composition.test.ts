@@ -2,12 +2,16 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CleanupScheduler } from "@hejmly/app-grocery/server";
+import type { CleanupScheduler, GroceryAnnouncer } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
 import { createTodoService } from "@hejmly/app-todo/server";
 import type { Auth, Db } from "@hejmly/core/server";
-import { createAssistantsService, createAuditRecorder } from "@hejmly/core/server";
+import {
+  createAssistantsService,
+  createAuditRecorder,
+  createPushService,
+} from "@hejmly/core/server";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
 import { createApp } from "./composition.ts";
 
@@ -16,6 +20,19 @@ const noopCleanup: CleanupScheduler = {
   cancel: async () => {},
   close: async () => {},
 };
+
+const noopAnnouncer: GroceryAnnouncer = {
+  async itemAdded() {},
+  async close() {},
+};
+
+const pushFor = (db: Db) => ({
+  service: createPushService(db, {
+    isMember: () => true,
+    subject: "https://hejmly.example",
+    send: async () => ({ status: 201 }),
+  }),
+});
 
 let distRoot: string;
 
@@ -32,6 +49,7 @@ afterAll(() => {
 const groceryFor = (db: Db) => ({
   service: createGroceryService(db),
   cleanup: noopCleanup,
+  announcer: noopAnnouncer,
 });
 
 const appFor = (auth: Auth, db: Db, baseURL = "http://localhost:5173") =>
@@ -46,6 +64,7 @@ const appFor = (auth: Auth, db: Db, baseURL = "http://localhost:5173") =>
     grocery: groceryFor(db),
     recipes: { service: createRecipeService(db) },
     todo: { service: createTodoService(db) },
+    push: pushFor(db),
     staticRoot: distRoot,
   });
 

@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { CleanupScheduler } from "@hejmly/app-grocery/server";
+import type { CleanupScheduler, GroceryAnnouncer } from "@hejmly/app-grocery/server";
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
 import { createTodoService } from "@hejmly/app-todo/server";
 import {
   createAssistantsService,
   createAuditRecorder,
+  createPushService,
   type Db,
   linkExistingClientsToResource,
 } from "@hejmly/core/server";
@@ -18,6 +19,19 @@ const noopCleanup: CleanupScheduler = {
   cancel: async () => {},
   close: async () => {},
 };
+
+const noopAnnouncer: GroceryAnnouncer = {
+  async itemAdded() {},
+  async close() {},
+};
+
+const pushFor = (db: Db) => ({
+  service: createPushService(db, {
+    isMember: () => true,
+    subject: "https://hejmly.example",
+    send: async () => ({ status: 201 }),
+  }),
+});
 
 const b64url = (bytes: Uint8Array): string => {
   let s = "";
@@ -102,9 +116,14 @@ const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<voi
           staticRoot: "/nonexistent/hejmly-web-dist",
           audit: createAuditRecorder(db),
           assistants: { service: createAssistantsService(db) },
-          grocery: { service: createGroceryService(db), cleanup: noopCleanup },
+          grocery: {
+            service: createGroceryService(db),
+            cleanup: noopCleanup,
+            announcer: noopAnnouncer,
+          },
           recipes: { service: createRecipeService(db) },
           todo: { service: createTodoService(db) },
+          push: pushFor(db),
         });
 
         await run({ baseURL, cookie, userId: user.id, db });

@@ -3,7 +3,7 @@ import type { UserId } from "@hejmly/core/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { match } from "ts-pattern";
 import * as z from "zod";
-import type { CleanupScheduler, GroceryService } from "../server/index.ts";
+import type { CleanupScheduler, GroceryAnnouncer, GroceryService } from "../server/index.ts";
 import {
   type GroceryError,
   type GroceryItem,
@@ -17,6 +17,7 @@ export type GroceryToolDeps = {
   actor: UserId;
   audit: AuditRecorder;
   cleanup: CleanupScheduler;
+  announcer: GroceryAnnouncer;
 };
 
 const safely = async (label: string, p: Promise<void>): Promise<void> => {
@@ -46,7 +47,7 @@ const itemResult = (text: string, item: GroceryItem) => ({
 });
 
 export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): void => {
-  const { service, actor, audit, cleanup } = deps;
+  const { service, actor, audit, cleanup, announcer } = deps;
   const auditor = createToolAuditor({ audit, actor, app: "grocery" });
 
   server.registerTool(
@@ -84,6 +85,7 @@ export const registerGroceryTools = (server: McpServer, deps: GroceryToolDeps): 
       if (result.kind === "err")
         return auditor.failure("grocery__add_item", result.error, errorText(result.error), {});
       await auditor.record("grocery__add_item", { itemId: result.value.id });
+      await safely("announce", announcer.itemAdded(result.value));
       return itemResult(`Added "${result.value.name}" to the grocery list.`, result.value);
     },
   );
