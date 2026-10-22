@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mergePreferences, PushApiError, requestFailureOf } from "./push-api.ts";
+import {
+  mergePreferences,
+  PushApiError,
+  requestFailureOf,
+  rollbackPreferences,
+} from "./push-api.ts";
 
 describe("mergePreferences", () => {
   test("changes only the topics in the change", () => {
@@ -29,5 +34,16 @@ describe("requestFailureOf", () => {
     expect(requestFailureOf(new PushApiError(422, ""), true)).toEqual({ kind: "browser" });
     expect(requestFailureOf(new PushApiError(503, ""), true)).toEqual({ kind: "server" });
     expect(requestFailureOf(new TypeError("Failed to fetch"), true)).toEqual({ kind: "server" });
+  });
+});
+
+describe("rollbackPreferences", () => {
+  test("restores only the topics of the failed change, keeping newer changes to others", () => {
+    const before = { grocery_added: true, todo_due: true };
+    const now = { grocery_added: false, todo_due: false };
+    expect(rollbackPreferences(now, before, { grocery_added: false })).toEqual({
+      grocery_added: true,
+      todo_due: false,
+    });
   });
 });

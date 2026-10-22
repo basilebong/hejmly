@@ -81,6 +81,16 @@ export const mergePreferences = (
   todo_due: change.todo_due ?? current.todo_due,
 });
 
+export const rollbackPreferences = (
+  current: PushPreferences,
+  previous: PushPreferences,
+  failed: PushPreferencesInput,
+): PushPreferences => ({
+  grocery_added:
+    failed.grocery_added === undefined ? current.grocery_added : previous.grocery_added,
+  todo_due: failed.todo_due === undefined ? current.todo_due : previous.todo_due,
+});
+
 export const fetchPushPreferences = async (): Promise<PushPreferences> => {
   const res = await fetch("/api/push/preferences", { credentials: "include" });
   return parseJson(res, PushPreferencesSchema);

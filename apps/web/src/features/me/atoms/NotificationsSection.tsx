@@ -90,6 +90,7 @@ type TopicRowProps = {
   icon: ReactNode;
   title: string;
   description: string;
+  reportsLoadError: boolean;
 };
 
 const TopicRow = ({
@@ -98,13 +99,17 @@ const TopicRow = ({
   icon,
   title,
   description,
-}: TopicRowProps): ReactElement => {
+  reportsLoadError,
+}: TopicRowProps): ReactElement | null => {
   const { preferences } = notifications;
+  if (preferences.kind === "error" && !reportsLoadError) return null;
   return (
     <Row
       icon={icon}
-      title={title}
-      description={preferences.kind === "error" ? "Couldn't load this setting." : description}
+      title={preferences.kind === "error" ? "Grocery and tasks" : title}
+      description={
+        preferences.kind === "error" ? "Couldn't load your notification settings." : description
+      }
       action={
         preferences.kind === "error"
           ? {
@@ -167,7 +172,8 @@ export const NotificationsSection = ({ notifications }: { notifications: Notific
           topic="grocery_added"
           icon={<BasketIcon size={18} />}
           title="Grocery list"
-          description="When someone adds to the list. Applies to every device where notifications are on."
+          description="When someone adds to the list."
+          reportsLoadError
         />
         <TopicRow
           notifications={notifications}
@@ -175,8 +181,12 @@ export const NotificationsSection = ({ notifications }: { notifications: Notific
           icon={<CheckSquareIcon size={18} />}
           title="Tasks due"
           description="At 8 in the morning, when tasks assigned to you are due or overdue."
+          reportsLoadError={false}
         />
       </div>
+      <p className="px-5 pt-2 text-slate-600 text-sm leading-snug">
+        Grocery and task settings apply to every device where notifications are on.
+      </p>
     </section>
   );
 };

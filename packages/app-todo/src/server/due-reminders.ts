@@ -25,22 +25,31 @@ export type DueReminders = {
   close(): Promise<void>;
 };
 
+const TITLE_MAX = 40;
+
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+const shorten = (text: string, max: number): string => {
+  const chars = Array.from(text);
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
+};
+
+const headline = (total: number, overdue: number): string => {
+  const today = total - overdue;
+  if (overdue === 0) return `${plural(today, "task")} due today`;
+  if (today === 0) return `${overdue} overdue ${overdue === 1 ? "task" : "tasks"}`;
+  return `${today} due today, ${overdue} overdue`;
+};
 
 export const describeDueTasks = (
   titles: readonly string[],
   overdue: number,
 ): { title: string; body: string } => {
-  const title =
-    overdue === 0
-      ? `${plural(titles.length, "task")} due today`
-      : `${plural(titles.length, "task")} due, ${overdue} overdue`;
-  const shown = titles.slice(0, NAMED);
+  const shown = titles.slice(0, NAMED).map((title) => shorten(title, TITLE_MAX));
   const rest = titles.length - shown.length;
   const last = rest > 0 ? `${rest} more` : shown.pop();
   const list = shown.length === 0 ? (last ?? "") : `${shown.join(", ")} and ${last ?? ""}`;
-  const body = list.length <= BODY_MAX ? list : `${list.slice(0, BODY_MAX - 1)}…`;
-  return { title, body };
+  return { title: headline(titles.length, overdue), body: shorten(list, BODY_MAX) };
 };
 
 export const createDueReminders = (opts: DueRemindersOptions): DueReminders => {

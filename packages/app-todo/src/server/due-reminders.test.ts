@@ -116,13 +116,15 @@ const withReminders = async (timeZone: string, fn: (ctx: Ctx) => Promise<void>) 
 };
 
 describe("describeDueTasks", () => {
-  test("counts what is due and lists up to three titles", () => {
+  test("counts what is due today and what is overdue without double counting", () => {
     expect(describeDueTasks(["Pay rent"], 0)).toEqual({
       title: "1 task due today",
       body: "Pay rent",
     });
+    expect(describeDueTasks(["Pay rent"], 1).title).toBe("1 overdue task");
+    expect(describeDueTasks(["Pay rent", "Call plumber"], 2).title).toBe("2 overdue tasks");
     expect(describeDueTasks(["Pay rent", "Call plumber"], 1)).toEqual({
-      title: "2 tasks due, 1 overdue",
+      title: "1 due today, 1 overdue",
       body: "Pay rent and Call plumber",
     });
     expect(describeDueTasks(["A", "B", "C", "D", "E"], 0)).toEqual({
@@ -131,10 +133,19 @@ describe("describeDueTasks", () => {
     });
   });
 
-  test("keeps a long title within the notification limit", () => {
-    const { body } = describeDueTasks(["x".repeat(600)], 0);
+  test("shortens long titles so the count of the rest always survives", () => {
+    const long = "x".repeat(200);
+    const { body } = describeDueTasks([long, long, long, "Pay rent", "Call mum"], 0);
+    expect(body.endsWith("and 2 more")).toBe(true);
     expect(body.length).toBeLessThanOrEqual(400);
+  });
+
+  test("never cuts an emoji in half", () => {
+    const { body } = describeDueTasks(["🧹".repeat(100)], 0);
     expect(body.endsWith("…")).toBe(true);
+    expect(body).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/,
+    );
   });
 });
 
@@ -152,7 +163,7 @@ describe("due reminders", () => {
       });
       expect(await ctx.inbox("anna")).toEqual([
         {
-          title: "2 tasks due, 1 overdue",
+          title: "1 due today, 1 overdue",
           body: "Pay rent and Water plants",
           tag: "todo-due-2026-10-22",
           url: "/todo",
@@ -184,7 +195,7 @@ describe("due reminders", () => {
       await ctx.reminders.runAt(new Date("2026-10-23T08:00:00Z"));
       expect((await ctx.inbox("anna")).map((m) => m.title)).toEqual([
         "1 task due today",
-        "1 task due, 1 overdue",
+        "1 overdue task",
       ]);
     });
   });
