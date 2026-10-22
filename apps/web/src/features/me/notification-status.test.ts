@@ -7,7 +7,7 @@ import {
   isDeviceSwitchUsable,
 } from "./notification-status.ts";
 
-const idle = { busy: null, declined: false } as const;
+const idle = { busy: null, notice: null } as const;
 
 describe("deviceViewOf", () => {
   test("follows the device query while nothing is in flight", () => {
@@ -29,13 +29,18 @@ describe("deviceViewOf", () => {
     });
   });
 
-  test("remembers that the person did not allow notifications, until they turn them on", () => {
+  test("remembers why the last turn-on failed, until the device is on", () => {
     const off = { kind: "ready", status: { kind: "off" } } as const;
-    expect(deviceViewOf({ ...idle, declined: true, query: off })).toEqual({ kind: "declined" });
+    expect(deviceViewOf({ ...idle, notice: "declined", query: off })).toEqual({
+      kind: "declined",
+    });
+    expect(deviceViewOf({ ...idle, notice: "browser_failed", query: off })).toEqual({
+      kind: "browser_failed",
+    });
     expect(
       deviceViewOf({
         ...idle,
-        declined: true,
+        notice: "declined",
         query: { kind: "ready", status: { kind: "on" } },
       }),
     ).toEqual({ kind: "on" });
@@ -68,10 +73,16 @@ describe("deviceHint", () => {
     expect(deviceHint(available, { kind: "declined" }).text).toMatch(/try again/i);
   });
 
+  test("a browser that could not subscribe keeps saying so after the toast is gone", () => {
+    expect(deviceHint(available, { kind: "browser_failed" }).text).toMatch(/couldn't set up/i);
+  });
+
   test("the environment wins over the device view", () => {
     const view: DeviceView = { kind: "off" };
     expect(deviceHint({ kind: "needs_install" }, view).text).toMatch(/iOS 16\.4/);
     expect(deviceHint({ kind: "unsupported" }, view).text).toMatch(/Try Chrome/);
+    expect(deviceHint({ kind: "needs_newer_ios" }, view).text).toMatch(/iOS 16\.4/);
+    expect(deviceHint({ kind: "needs_newer_ios" }, view).text).not.toMatch(/Chrome/);
     expect(deviceHint({ kind: "blocked" }, view).text).toMatch(/blocked/);
     expect(deviceHint({ kind: "blocked" }, view).action).toBeUndefined();
   });
@@ -79,10 +90,10 @@ describe("deviceHint", () => {
 
 describe("isDeviceSwitchUsable", () => {
   test("only settled on/off states can be toggled", () => {
-    const usable = (["on", "off", "declined"] as const).map((kind) =>
+    const usable = (["on", "off", "declined", "browser_failed"] as const).map((kind) =>
       isDeviceSwitchUsable({ kind: "available" }, { kind }),
     );
-    expect(usable).toEqual([true, true, true]);
+    expect(usable).toEqual([true, true, true, true]);
     for (const kind of ["checking", "check_failed", "no_worker"] as const) {
       expect(isDeviceSwitchUsable({ kind: "available" }, { kind })).toBe(false);
     }

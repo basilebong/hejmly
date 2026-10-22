@@ -30,6 +30,12 @@ describe("pushStateOf", () => {
     });
   });
 
+  test("an installed app on an iOS older than 16.4 needs a newer iOS, not another browser", () => {
+    expect(
+      pushStateOf({ ...capable, appleMobile: true, standalone: true, pushManager: false }),
+    ).toEqual({ kind: "needs_newer_ios" });
+  });
+
   test("a browser without the APIs is unsupported", () => {
     expect(pushStateOf({ ...capable, pushManager: false })).toEqual({ kind: "unsupported" });
     expect(pushStateOf({ ...capable, serviceWorker: false })).toEqual({ kind: "unsupported" });

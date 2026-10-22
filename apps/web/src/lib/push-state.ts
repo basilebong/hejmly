@@ -10,12 +10,15 @@ export type PushEnvironment = {
 export type PushState =
   | { kind: "available" }
   | { kind: "needs_install" }
+  | { kind: "needs_newer_ios" }
   | { kind: "unsupported" }
   | { kind: "blocked" };
 
 export const pushStateOf = (env: PushEnvironment): PushState => {
   if (env.appleMobile && !env.standalone) return { kind: "needs_install" };
-  if (!env.serviceWorker || !env.pushManager || !env.notification) return { kind: "unsupported" };
+  if (!env.serviceWorker || !env.pushManager || !env.notification) {
+    return env.appleMobile ? { kind: "needs_newer_ios" } : { kind: "unsupported" };
+  }
   if (env.permission === "denied") return { kind: "blocked" };
   return { kind: "available" };
 };

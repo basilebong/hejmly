@@ -21,7 +21,11 @@ export const windowOf = (at: number, size: number): Window => {
 
 const TAG_HASH_LENGTH = 10;
 
-export const announcementTag = async (by: UserId, windowIndex: number): Promise<string> => {
+export const announcementTag = async (
+  by: UserId,
+  windowIndex: number,
+  sequence = 0,
+): Promise<string> => {
   const digest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(by)),
   );
@@ -29,5 +33,6 @@ export const announcementTag = async (by: UserId, windowIndex: number): Promise<
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .slice(0, TAG_HASH_LENGTH);
-  return `grocery-${hash}-${windowIndex.toString(36)}`;
+  const base = `grocery-${hash}-${windowIndex.toString(36)}`;
+  return sequence === 0 ? base : `${base}-${sequence.toString(36)}`;
 };

@@ -30,7 +30,7 @@ export type PushError =
   | { kind: "not_found" }
   | { kind: "unavailable" };
 
-export type NotifyError = { kind: "invalid_message" };
+export type NotifyError = { kind: "invalid_message" } | { kind: "unavailable" };
 
 export type PushSubscriber = { userId: UserId; sessionId: SessionId };
 
@@ -173,6 +173,31 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
     return { grocery_added: chosen.get("grocery_added") ?? true };
   };
 
+  const notifyTargets = (topic: PushTopic, audience: PushAudience, now: Date) =>
+    db
+      .select({
+        id: pushSubscriptions.id,
+        endpoint: pushSubscriptions.endpoint,
+        p256dh: pushSubscriptions.p256dh,
+        auth: pushSubscriptions.auth,
+        refusals: pushSubscriptions.refusals,
+        email: users.email,
+        enabled: pushPreferences.enabled,
+      })
+      .from(pushSubscriptions)
+      .innerJoin(users, eq(users.id, pushSubscriptions.userId))
+      .innerJoin(
+        sessions,
+        and(eq(sessions.id, pushSubscriptions.sessionId), gt(sessions.expiresAt, now)),
+      )
+      .leftJoin(
+        pushPreferences,
+        and(eq(pushPreferences.userId, pushSubscriptions.userId), eq(pushPreferences.topic, topic)),
+      )
+      .where(
+        audience.except === undefined ? undefined : ne(pushSubscriptions.userId, audience.except),
+      );
+
   const forget = async (id: string, endpoint: string, reason: string, status?: number) => {
     await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, id));
     console.info(`push: ${reason}, removed`, { origin: originOf(endpoint), status });
@@ -299,36 +324,21 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
       if (!parsed.success) return err({ kind: "invalid_message" });
       const message = parsed.output;
       const now = new Date();
-      const rows = await db
-        .select({
-          id: pushSubscriptions.id,
-          endpoint: pushSubscriptions.endpoint,
-          p256dh: pushSubscriptions.p256dh,
-          auth: pushSubscriptions.auth,
-          refusals: pushSubscriptions.refusals,
-          email: users.email,
-          enabled: pushPreferences.enabled,
-        })
-        .from(pushSubscriptions)
-        .innerJoin(users, eq(users.id, pushSubscriptions.userId))
-        .innerJoin(
-          sessions,
-          and(eq(sessions.id, pushSubscriptions.sessionId), gt(sessions.expiresAt, now)),
-        )
-        .leftJoin(
-          pushPreferences,
-          and(
-            eq(pushPreferences.userId, pushSubscriptions.userId),
-            eq(pushPreferences.topic, topic),
-          ),
-        )
-        .where(
-          audience.except === undefined ? undefined : ne(pushSubscriptions.userId, audience.except),
-        );
+      let rows: Awaited<ReturnType<typeof notifyTargets>>;
+      let vapid: { subject: string } & VapidKeys;
+      try {
+        rows = await notifyTargets(topic, audience, now);
+        vapid = { subject: options.subject, ...(await vapidKeys()) };
+      } catch (error) {
+        console.error("push: notify failed", {
+          error: error instanceof Error ? error.name : typeof error,
+          code: codeOf(error),
+        });
+        return err({ kind: "unavailable" });
+      }
       const targets = rows.filter((r) => options.isMember(r.email) && r.enabled !== false);
       if (targets.length === 0) return ok({ sent: 0, removed: 0, failed: 0 });
 
-      const vapid = { subject: options.subject, ...(await vapidKeys()) };
       const results = await Promise.all(
         targets.map(async (target): Promise<keyof PushOutcome> => {
           try {

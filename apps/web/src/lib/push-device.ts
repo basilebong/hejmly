@@ -63,9 +63,10 @@ const subscribe = async (
   }
 };
 
-export const turnOn = async (): Promise<DeviceChange> => {
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return { kind: "not_allowed" };
+export const turnOn = async (
+  permission: Promise<NotificationPermission>,
+): Promise<DeviceChange> => {
+  if ((await permission) !== "granted") return { kind: "not_allowed" };
   const reg = await registration();
   if (reg === undefined) return { kind: "no_worker" };
   let key: Uint8Array<ArrayBuffer>;

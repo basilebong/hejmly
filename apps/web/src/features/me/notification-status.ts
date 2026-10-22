@@ -12,7 +12,10 @@ export type DeviceView =
   | { kind: "turning_off" }
   | { kind: "on" }
   | { kind: "off" }
-  | { kind: "declined" };
+  | { kind: "declined" }
+  | { kind: "browser_failed" };
+
+export type DeviceNotice = "declined" | "browser_failed";
 
 export type DeviceQuery =
   | { kind: "pending" }
@@ -22,10 +25,10 @@ export type DeviceQuery =
 export type DeviceViewInput = {
   query: DeviceQuery;
   busy: "on" | "off" | null;
-  declined: boolean;
+  notice: DeviceNotice | null;
 };
 
-export const deviceViewOf = ({ query, busy, declined }: DeviceViewInput): DeviceView => {
+export const deviceViewOf = ({ query, busy, notice }: DeviceViewInput): DeviceView => {
   if (busy === "on") return { kind: "turning_on" };
   if (busy === "off") return { kind: "turning_off" };
   return match(query)
@@ -35,7 +38,7 @@ export const deviceViewOf = ({ query, busy, declined }: DeviceViewInput): Device
     .with({ kind: "ready", status: { kind: "no_worker" } }, () => ({ kind: "no_worker" }))
     .with({ kind: "ready", status: { kind: "on" } }, () => ({ kind: "on" }))
     .with({ kind: "ready", status: { kind: "off" } }, () =>
-      declined ? { kind: "declined" } : { kind: "off" },
+      notice === null ? { kind: "off" } : { kind: notice },
     )
     .exhaustive();
 };
@@ -66,6 +69,9 @@ const viewHint = (view: DeviceView): Hint =>
     .with({ kind: "declined" }, () => ({
       text: "Notifications weren't allowed. Tap the switch to try again. If no prompt appears, allow them in the site or app settings.",
     }))
+    .with({ kind: "browser_failed" }, () => ({
+      text: "This browser couldn't set up notifications. Try again later, or use another browser on this device.",
+    }))
     .exhaustive();
 
 export const deviceHint = (state: PushState, view: DeviceView): Hint =>
@@ -73,6 +79,9 @@ export const deviceHint = (state: PushState, view: DeviceView): Hint =>
     .returnType<Hint>()
     .with({ kind: "needs_install" }, () => ({
       text: "On iPhone and iPad, add Hejmly to your Home Screen first: tap Share, then “Add to Home Screen”, and open it from there. Needs iOS 16.4 or later.",
+    }))
+    .with({ kind: "needs_newer_ios" }, () => ({
+      text: "Notifications need iOS 16.4 or later. Update this iPhone or iPad, then come back.",
     }))
     .with({ kind: "unsupported" }, () => ({
       text: "This browser can't show notifications. Try Chrome, Edge, Firefox or Safari.",
@@ -85,7 +94,10 @@ export const deviceHint = (state: PushState, view: DeviceView): Hint =>
 
 export const isDeviceSwitchUsable = (state: PushState, view: DeviceView): boolean =>
   state.kind === "available" &&
-  (view.kind === "on" || view.kind === "off" || view.kind === "declined");
+  (view.kind === "on" ||
+    view.kind === "off" ||
+    view.kind === "declined" ||
+    view.kind === "browser_failed");
 
 export const failureMessage = (failure: PushFailure): string =>
   match(failure)

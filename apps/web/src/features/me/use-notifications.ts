@@ -8,6 +8,7 @@ import { fetchPushPreferences, mergePreferences, updatePushPreferences } from "@
 import { type DeviceStatus, readDevice, turnOff, turnOn } from "@/lib/push-device";
 import { type PushState, pushStateOf, readPushEnvironment } from "@/lib/push-state";
 import {
+  type DeviceNotice,
   type DeviceQuery,
   type DeviceView,
   deviceViewOf,
@@ -16,6 +17,8 @@ import {
 
 export const DEVICE_KEY = ["push", "device"] as const;
 export const PREFERENCES_KEY = ["push", "preferences"] as const;
+
+type DeviceRequest = { on: true; permission: Promise<NotificationPermission> } | { on: false };
 
 export type PreferencesView =
   | { kind: "loading" }
@@ -32,8 +35,9 @@ export type Notifications = {
   setPreference: (input: PushPreferencesInput) => void;
 };
 
-const usePushState = (): PushState => {
+const usePushState = (): [PushState, () => void] => {
   const [state, setState] = useState<PushState>(() => pushStateOf(readPushEnvironment()));
+  const refreshState = () => setState(pushStateOf(readPushEnvironment()));
 
   useEffect(() => {
     const refresh = () => setState(pushStateOf(readPushEnvironment()));
@@ -57,13 +61,13 @@ const usePushState = (): PushState => {
     };
   }, []);
 
-  return state;
+  return [state, refreshState];
 };
 
 export const useNotifications = (): Notifications => {
   const qc = useQueryClient();
-  const state = usePushState();
-  const [declined, setDeclined] = useState(false);
+  const [state, refreshState] = usePushState();
+  const [notice, setNotice] = useState<DeviceNotice | null>(null);
 
   const device = useQuery({
     queryKey: DEVICE_KEY,
@@ -75,15 +79,15 @@ export const useNotifications = (): Notifications => {
   const preferences = useQuery({ queryKey: PREFERENCES_KEY, queryFn: fetchPushPreferences });
 
   const toggleDevice = useMutation({
-    mutationFn: (on: boolean) => (on ? turnOn() : turnOff()),
-    onMutate: async (on) => {
-      setDeclined(false);
+    mutationFn: (change: DeviceRequest) => (change.on ? turnOn(change.permission) : turnOff()),
+    onMutate: async ({ on }) => {
+      setNotice(null);
       await qc.cancelQueries({ queryKey: DEVICE_KEY });
       const previous = qc.getQueryData<DeviceStatus>(DEVICE_KEY);
       if (!on) qc.setQueryData<DeviceStatus>(DEVICE_KEY, { kind: "off" });
       return { previous };
     },
-    onSuccess: (change, on, context) => {
+    onSuccess: (change, { on }, context) => {
       const restore = () => {
         if (context.previous !== undefined) {
           qc.setQueryData<DeviceStatus>(DEVICE_KEY, context.previous);
@@ -98,7 +102,7 @@ export const useNotifications = (): Notifications => {
           qc.setQueryData<DeviceStatus>(DEVICE_KEY, { kind: "off" });
         })
         .with({ kind: "not_allowed" }, () => {
-          setDeclined(true);
+          setNotice("declined");
           toast.info("Notifications weren't allowed on this device");
         })
         .with({ kind: "no_worker" }, () => {
@@ -106,17 +110,19 @@ export const useNotifications = (): Notifications => {
         })
         .with({ kind: "failed" }, ({ failure }) => {
           restore();
+          if (on && failure.kind === "browser") setNotice("browser_failed");
           toast.error(on ? failureMessage(failure) : "Couldn't turn notifications off. Try again.");
         })
         .exhaustive();
     },
-    onError: (_error, on, context) => {
+    onError: (_error, { on }, context) => {
       if (context?.previous !== undefined) {
         qc.setQueryData<DeviceStatus>(DEVICE_KEY, context.previous);
       }
       toast.error(on ? "Couldn't turn notifications on" : "Couldn't turn notifications off");
     },
     onSettled: () => {
+      refreshState();
       void qc.invalidateQueries({ queryKey: DEVICE_KEY });
     },
   });
@@ -143,23 +149,28 @@ export const useNotifications = (): Notifications => {
   const deviceQuery: DeviceQuery =
     device.data !== undefined
       ? { kind: "ready", status: device.data }
-      : device.isError
+      : device.isError && !device.isFetching
         ? { kind: "error" }
         : { kind: "pending" };
 
-  const busy = toggleDevice.isPending ? (toggleDevice.variables ? "on" : "off") : null;
+  const busy = toggleDevice.isPending ? (toggleDevice.variables?.on ? "on" : "off") : null;
 
   return {
     state,
-    device: deviceViewOf({ query: deviceQuery, busy, declined }),
+    device: deviceViewOf({ query: deviceQuery, busy, notice }),
     setDevice: (on) => {
-      if (!toggleDevice.isPending) toggleDevice.mutate(on);
+      if (toggleDevice.isPending) return;
+      // WebKit only shows the prompt when requestPermission runs inside the tap
+      // itself, not after an await: https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/
+      toggleDevice.mutate(
+        on ? { on: true, permission: Notification.requestPermission() } : { on: false },
+      );
     },
     retryDevice: () => void device.refetch(),
     preferences:
       preferences.data !== undefined
         ? { kind: "ready", value: preferences.data }
-        : preferences.isError
+        : preferences.isError && !preferences.isFetching
           ? { kind: "error" }
           : { kind: "loading" },
     retryPreferences: () => void preferences.refetch(),

@@ -458,6 +458,21 @@ describe("push service", () => {
     });
   });
 
+  test("a storage failure while notifying is an error result, not a throw", async () => {
+    await withPush(async ({ db, service }) => {
+      const logged = spyOn(console, "error").mockImplementation(() => {});
+      try {
+        db.$client.run("DROP TABLE push_subscriptions");
+        expect(await service.notify("grocery_added", {}, message)).toEqual({
+          kind: "err",
+          error: { kind: "unavailable" },
+        });
+      } finally {
+        logged.mockRestore();
+      }
+    });
+  });
+
   test("an existing key pair is loaded, not regenerated", async () => {
     await withTestAuth({}, async ({ db }) => {
       const options = { isMember: () => true, subject: SUBJECT, send: recorder().send };

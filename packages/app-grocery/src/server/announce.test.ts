@@ -50,6 +50,13 @@ describe("announcementTag", () => {
 
   test("fits a long user id and a short test window's large index", async () => {
     const long = parseUserId("x".repeat(64));
-    expect(await announcementTag(long, 9_999_999_999)).toMatch(/^[A-Za-z0-9_-]{1,32}$/);
+    expect(await announcementTag(long, 9_999_999_999, 99)).toMatch(/^[A-Za-z0-9_-]{1,32}$/);
+  });
+
+  test("a follow-up announcement for the same window does not replace the first", async () => {
+    const first = await announcementTag(anna, 29_000_000);
+    const second = await announcementTag(anna, 29_000_000, 1);
+    expect(second).not.toBe(first);
+    expect(await announcementTag(anna, 29_000_000, 0)).toBe(first);
   });
 });

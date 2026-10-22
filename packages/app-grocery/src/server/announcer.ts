@@ -40,11 +40,13 @@ export const createGroceryAnnouncer = (opts: AnnouncerOptions): GroceryAnnouncer
   const scheduling = new Map<string, Promise<void>>();
   const started = new Map<string, number>();
   const announced = new Map<GroceryItemId, number>();
+  const sends = new Map<string, { window: number; count: number }>();
 
   const forgetOldWindows = (current: number): void => {
     const oldest = current - REMEMBERED_WINDOWS;
     for (const [key, window] of started) if (window < oldest) started.delete(key);
     for (const [id, window] of announced) if (window < oldest) announced.delete(id);
+    for (const [key, sent] of sends) if (sent.window < oldest) sends.delete(key);
   };
 
   const announce = async ({ by, window }: AnnounceJobData): Promise<void> => {
@@ -67,6 +69,9 @@ export const createGroceryAnnouncer = (opts: AnnouncerOptions): GroceryAnnouncer
     const first = added[0];
     if (first === undefined) return;
     for (const item of added) announced.set(item.id, window);
+    const key = windowKey(by, window);
+    const sequence = sends.get(key)?.count ?? 0;
+    sends.set(key, { window, count: sequence + 1 });
     const result = await opts.push.notify(
       "grocery_added",
       { except: by },
@@ -76,7 +81,7 @@ export const createGroceryAnnouncer = (opts: AnnouncerOptions): GroceryAnnouncer
           first.addedBy.name,
           added.map((item) => item.name),
         ),
-        tag: await announcementTag(by, window),
+        tag: await announcementTag(by, window, sequence),
         url: "/grocery",
       },
     );
