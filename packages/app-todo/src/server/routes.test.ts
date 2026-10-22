@@ -3,8 +3,6 @@ import {
   type Auth,
   createRequireSession,
   type Db,
-  isAllowedEmail,
-  parseAllowedEmails,
   type SessionVariables,
 } from "@hejmly/core/server";
 import { eq } from "@hejmly/core/server/drizzle";
@@ -46,31 +44,31 @@ const seedSessionCookie = async (
 };
 
 const withTodo = async (fn: (ctx: TodoTestContext) => Promise<void>): Promise<void> => {
-  await withTestAuth({ allowedEmails: ALLOWED }, async ({ auth, db, signSessionCookie }) => {
-    const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
-    const allowed = parseAllowedEmails(ALLOWED);
-    const service = createTodoService(db, {
-      isMember: (email) => isAllowedEmail(allowed, email),
-    });
-    const app: TestApp = new Hono<{ Variables: SessionVariables }>()
-      .use("/api/*", createRequireSession(auth))
-      .route("/api/todo", createTodoRoutes({ service }));
-    const addMember = () =>
-      seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
-    const addFormerMember = async (): Promise<string> => {
-      const now = new Date();
-      await db.insert(users).values({
-        id: "u_eve",
-        name: "Eve",
-        email: OUTSIDER_EMAIL,
-        emailVerified: true,
-        createdAt: now,
-        updatedAt: now,
-      });
-      return "u_eve";
-    };
-    await fn({ app, cookie, userId, db, addMember, addFormerMember });
-  });
+  await withTestAuth(
+    { allowedEmails: ALLOWED },
+    async ({ auth, membership, db, signSessionCookie }) => {
+      const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
+      const service = createTodoService(db, { isMember: membership.allowsEmail });
+      const app: TestApp = new Hono<{ Variables: SessionVariables }>()
+        .use("/api/*", createRequireSession(auth, membership))
+        .route("/api/todo", createTodoRoutes({ service }));
+      const addMember = () =>
+        seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
+      const addFormerMember = async (): Promise<string> => {
+        const now = new Date();
+        await db.insert(users).values({
+          id: "u_eve",
+          name: "Eve",
+          email: OUTSIDER_EMAIL,
+          emailVerified: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+        return "u_eve";
+      };
+      await fn({ app, cookie, userId, db, addMember, addFormerMember });
+    },
+  );
 };
 
 const AuthorSchema = v.union([

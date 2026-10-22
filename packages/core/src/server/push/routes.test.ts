@@ -24,22 +24,25 @@ const seedSessionCookie = async (
 type Ctx = { app: Hono<{ Variables: SessionVariables }>; cookie: string; sent: PushRequest[] };
 
 const withRoutes = async (fn: (ctx: Ctx) => Promise<void>): Promise<void> => {
-  await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db, signSessionCookie }) => {
-    const cookie = await seedSessionCookie(auth, signSessionCookie);
-    const sent: PushRequest[] = [];
-    const service = createPushService(db, {
-      isMember: () => true,
-      subject: "https://hejmly.example",
-      send: async (req) => {
-        sent.push(req);
-        return { status: 201 };
-      },
-    });
-    const app = new Hono<{ Variables: SessionVariables }>()
-      .use("/api/*", createRequireSession(auth))
-      .route("/api/push", createPushRoutes({ service }));
-    await fn({ app, cookie, sent });
-  });
+  await withTestAuth(
+    { allowedEmails: TEST_EMAIL },
+    async ({ auth, membership, db, signSessionCookie }) => {
+      const cookie = await seedSessionCookie(auth, signSessionCookie);
+      const sent: PushRequest[] = [];
+      const service = createPushService(db, {
+        isMember: () => true,
+        subject: "https://hejmly.example",
+        send: async (req) => {
+          sent.push(req);
+          return { status: 201 };
+        },
+      });
+      const app = new Hono<{ Variables: SessionVariables }>()
+        .use("/api/*", createRequireSession(auth, membership))
+        .route("/api/push", createPushRoutes({ service }));
+      await fn({ app, cookie, sent });
+    },
+  );
 };
 
 const send = (ctx: Ctx, method: string, path: string, body?: unknown) =>

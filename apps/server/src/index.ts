@@ -11,9 +11,9 @@ import {
   createAuditRecorder,
   createAuth,
   createDb,
+  createMembershipService,
   createPushService,
   fetchPushSender,
-  isAllowedEmail,
   parseAllowedEmails,
 } from "@hejmly/core/server";
 import { parseRuntimeEnv } from "@hejmly/core/shared";
@@ -44,15 +44,26 @@ const auth = createAuth({
   mcpResource,
 });
 
+const membership = createMembershipService({ auth, db, allowedEmails });
+const revocation = await membership.revokeFormerMembers();
+if (revocation.kind === "err") {
+  console.error(`Hejmly server could not revoke former members: ${revocation.error.message}`);
+  process.exit(1);
+}
+const { formerMembers } = revocation.value;
+if (formerMembers.length > 0) {
+  console.info(
+    `Hejmly server: ${formerMembers.length} user(s) not on HEJMLY_ALLOWED_EMAILS; their sessions and assistant grants are revoked`,
+  );
+}
+
 const groceryService = createGroceryService(db);
 const recipeService = createRecipeService(db);
-const todoService = createTodoService(db, {
-  isMember: (email) => isAllowedEmail(allowedEmails, email),
-});
+const todoService = createTodoService(db, { isMember: membership.allowsEmail });
 const assistantsService = createAssistantsService(db);
 const audit = createAuditRecorder(db);
 const pushService = createPushService(db, {
-  isMember: (email) => isAllowedEmail(allowedEmails, email),
+  isMember: membership.allowsEmail,
   subject: env.BETTER_AUTH_URL,
   send: fetchPushSender(),
 });
@@ -72,6 +83,7 @@ const dueReminders = createDueReminders({
 
 const app = createApp({
   auth,
+  membership,
   db,
   baseURL: env.BETTER_AUTH_URL,
   jwksOrigin: `http://localhost:${env.PORT}`,

@@ -94,3 +94,26 @@ describe("HEJMLY_TIMEZONE", () => {
     expect(() => parseRuntimeEnv({ ...runtime, HEJMLY_TIMEZONE: "Mars/Olympus" })).toThrow();
   });
 });
+
+describe("parseRuntimeEnv", () => {
+  const runtime = (allowed: string) =>
+    parseRuntimeEnv({
+      BETTER_AUTH_URL: "https://app.example.com",
+      BETTER_AUTH_SECRET: "a".repeat(32),
+      GOOGLE_ID: "id",
+      GOOGLE_SECRET: "secret",
+      DATABASE_PATH: "/data/app.db",
+      HEJMLY_ALLOWED_EMAILS: allowed,
+    });
+
+  test("HEJMLY_ALLOWED_EMAILS must name at least one email", () => {
+    for (const blank of [" ", ",", " , ,\t"]) {
+      expect(() => runtime(blank)).toThrow(/at least one email/);
+    }
+    expect(runtime("a@example.com, ").HEJMLY_ALLOWED_EMAILS).toBe("a@example.com, ");
+  });
+
+  test("HEJMLY_ALLOWED_EMAILS rejects an entry that is not an email", () => {
+    expect(() => runtime("a@example.com,anna.example.com")).toThrow(/comma-separated emails/);
+  });
+});

@@ -6,7 +6,7 @@ import type { CleanupScheduler, GroceryAnnouncer } from "@hejmly/app-grocery/ser
 import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
 import { createTodoService } from "@hejmly/app-todo/server";
-import type { Auth, Db } from "@hejmly/core/server";
+import type { Auth, Db, MembershipService } from "@hejmly/core/server";
 import {
   createAssistantsService,
   createAuditRecorder,
@@ -52,9 +52,15 @@ const groceryFor = (db: Db) => ({
   announcer: noopAnnouncer,
 });
 
-const appFor = (auth: Auth, db: Db, baseURL = "http://localhost:5173") =>
+const appFor = (
+  auth: Auth,
+  membership: MembershipService,
+  db: Db,
+  baseURL = "http://localhost:5173",
+) =>
   createApp({
     auth,
+    membership,
     db,
     baseURL,
     jwksOrigin: baseURL,
@@ -70,8 +76,8 @@ const appFor = (auth: Auth, db: Db, baseURL = "http://localhost:5173") =>
 
 describe("composition", () => {
   test("GET /healthz returns ok", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/healthz");
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true });
@@ -79,8 +85,8 @@ describe("composition", () => {
   });
 
   test("GET /api/auth/get-session returns 200 with null for anonymous request", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/api/auth/get-session");
       expect(res.status).toBe(200);
       expect(await res.json()).toBeNull();
@@ -88,8 +94,8 @@ describe("composition", () => {
   });
 
   test("GET /api/me without a session returns 401", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/api/me");
       expect(res.status).toBe(401);
       expect(await res.json()).toEqual({ error: "unauthorized" });
@@ -99,7 +105,7 @@ describe("composition", () => {
   test("GET /api/me with a valid session returns the user", async () => {
     await withTestAuth(
       { allowedEmails: "basile@example.com" },
-      async ({ auth, db, signSessionCookie }) => {
+      async ({ auth, membership, db, signSessionCookie }) => {
         const ctx = await auth.$context;
         const user = await ctx.internalAdapter.createUser(
           {
@@ -111,7 +117,7 @@ describe("composition", () => {
         const sessionRow = await ctx.internalAdapter.createSession(user.id);
         const signed = await signSessionCookie(sessionRow.token);
 
-        const app = appFor(auth, db);
+        const app = appFor(auth, membership, db);
         const res = await app.request("/api/me", {
           headers: { cookie: `Hejmly.session_token=${signed}` },
         });
@@ -151,8 +157,8 @@ describe("composition", () => {
     test("a form-style POST from another site is refused on every app's create route", async () => {
       await withTestAuth(
         { allowedEmails: "basile@example.com" },
-        async ({ auth, db, signSessionCookie }) => {
-          const app = appFor(auth, db);
+        async ({ auth, membership, db, signSessionCookie }) => {
+          const app = appFor(auth, membership, db);
           const cookie = await signedIn(auth, signSessionCookie);
           for (const { path, body } of creates) {
             for (const forged of [
@@ -182,8 +188,8 @@ describe("composition", () => {
     test("the app's own requests still go through", async () => {
       await withTestAuth(
         { allowedEmails: "basile@example.com" },
-        async ({ auth, db, signSessionCookie }) => {
-          const app = appFor(auth, db);
+        async ({ auth, membership, db, signSessionCookie }) => {
+          const app = appFor(auth, membership, db);
           const cookie = await signedIn(auth, signSessionCookie);
 
           const json = await app.request("/api/todo/projects", {
@@ -204,8 +210,8 @@ describe("composition", () => {
   });
 
   test("push settings need a session", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       for (const path of ["/api/push/vapid-public-key", "/api/push/preferences"]) {
         const res = await app.request(path);
         expect({ path, status: res.status }).toEqual({ path, status: 401 });
@@ -214,8 +220,8 @@ describe("composition", () => {
   });
 
   test("GET /api/me/assistants without a session returns 401", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/api/me/assistants");
       expect(res.status).toBe(401);
     });
@@ -224,7 +230,7 @@ describe("composition", () => {
   test("GET /api/me/assistants with a valid session returns an empty list initially", async () => {
     await withTestAuth(
       { allowedEmails: "basile@example.com" },
-      async ({ auth, db, signSessionCookie }) => {
+      async ({ auth, membership, db, signSessionCookie }) => {
         const ctx = await auth.$context;
         const user = await ctx.internalAdapter.createUser(
           {
@@ -236,7 +242,7 @@ describe("composition", () => {
         const sessionRow = await ctx.internalAdapter.createSession(user.id);
         const signed = await signSessionCookie(sessionRow.token);
 
-        const app = appFor(auth, db);
+        const app = appFor(auth, membership, db);
         const res = await app.request("/api/me/assistants", {
           headers: { cookie: `Hejmly.session_token=${signed}` },
         });
@@ -250,8 +256,8 @@ describe("composition", () => {
   test("/api/todo is gated by the session and mounted for signed-in users", async () => {
     await withTestAuth(
       { allowedEmails: "basile@example.com" },
-      async ({ auth, db, signSessionCookie }) => {
-        const app = appFor(auth, db);
+      async ({ auth, membership, db, signSessionCookie }) => {
+        const app = appFor(auth, membership, db);
         const anonymous = await app.request("/api/todo/projects");
         expect(anonymous.status).toBe(401);
 
@@ -272,8 +278,8 @@ describe("composition", () => {
   });
 
   test("GET /.well-known/oauth-protected-resource advertises the MCP resource", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/.well-known/oauth-protected-resource");
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({
@@ -284,8 +290,8 @@ describe("composition", () => {
   });
 
   test("GET /.well-known/oauth-authorization-server publishes the issuer + endpoints", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/.well-known/oauth-authorization-server");
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({
@@ -300,8 +306,8 @@ describe("composition", () => {
   // The root-level document must be the plugin's own, not a copy of it: a copy
   // silently under-advertises whatever the plugin gains next.
   test("GET /.well-known/oauth-authorization-server re-serves the plugin's own document", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/.well-known/oauth-authorization-server");
       expect(res.status).toBe(200);
       const published = await res.json();
@@ -316,8 +322,8 @@ describe("composition", () => {
   });
 
   test("GET /.well-known/openid-configuration re-serves the plugin's OIDC document", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/.well-known/openid-configuration");
       expect(res.status).toBe(200);
       const published = await res.json();
@@ -332,8 +338,8 @@ describe("composition", () => {
   });
 
   test("POST /mcp without a bearer token returns 401 with a WWW-Authenticate challenge", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/mcp", {
         method: "POST",
         headers: { "content-type": "application/json", host: "localhost:5173" },
@@ -345,8 +351,8 @@ describe("composition", () => {
   });
 
   test("POST /mcp from a disallowed Host is rejected by the DNS-rebinding guard", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/mcp", {
         method: "POST",
         headers: { "content-type": "application/json", host: "evil.example.com" },
@@ -358,8 +364,8 @@ describe("composition", () => {
   });
 
   test("GET / serves the built index.html", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/");
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/html");
@@ -368,8 +374,8 @@ describe("composition", () => {
   });
 
   test("GET an unknown client route falls back to index.html for SPA routing", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
       const res = await app.request("/grocery");
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/html");
@@ -377,8 +383,8 @@ describe("composition", () => {
   });
 
   test("the static catch-all does not shadow API or health routes", async () => {
-    await withTestAuth({}, async ({ auth, db }) => {
-      const app = appFor(auth, db);
+    await withTestAuth({}, async ({ auth, membership, db }) => {
+      const app = appFor(auth, membership, db);
 
       const health = await app.request("/healthz");
       expect(health.status).toBe(200);

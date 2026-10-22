@@ -2,9 +2,12 @@ import { oauthProvider } from "@better-auth/oauth-provider";
 import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { jwt } from "better-auth/plugins";
+import { parseUserId } from "../../shared/index.ts";
 import type { Db } from "../db/index.ts";
+import { isAllowedEmail } from "./allowlist.ts";
 import { checkEmailAllowed } from "./check-email-allowed.ts";
 import * as authSchema from "./schema.ts";
+import { findUserEmail } from "./users.ts";
 
 export type CreateAuthOptions = {
   db: Db;
@@ -90,7 +93,16 @@ export const createAuth = (opts: CreateAuthOptions) => {
     session: {
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,
-      cookieCache: { enabled: true, maxAge: 60 * 5 },
+      cookieCache: {
+        enabled: true,
+        maxAge: 60 * 5,
+        // A cached session is served without reading the database, where boot
+        // revocation deletes a former member's session. A non-member gets a
+        // version no cookie can already carry, so their cache never matches and
+        // every read goes back to the database.
+        version: (_session, user) =>
+          isAllowedEmail(opts.allowedEmails, user.email) ? "1" : crypto.randomUUID(),
+      },
     },
 
     databaseHooks: {
@@ -98,6 +110,17 @@ export const createAuth = (opts: CreateAuthOptions) => {
         create: {
           before: async (user) => {
             checkEmailAllowed(opts.allowedEmails, user.email);
+          },
+        },
+      },
+      // The user hook above only fires on first sign-up. A user whose row
+      // survives their removal from the allowlist would otherwise sign straight
+      // back in, so membership is re-checked whenever a session is minted.
+      session: {
+        create: {
+          before: async (session) => {
+            const email = await findUserEmail(opts.db, parseUserId(session.userId));
+            checkEmailAllowed(opts.allowedEmails, email);
           },
         },
       },

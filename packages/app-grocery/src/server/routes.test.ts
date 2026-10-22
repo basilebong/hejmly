@@ -77,7 +77,7 @@ const seedSessionCookie = async (
 const withGrocery = async (fn: (ctx: GroceryTestContext) => Promise<void>): Promise<void> => {
   await withTestAuth(
     { allowedEmails: `${TEST_EMAIL},${MEMBER_EMAIL}` },
-    async ({ auth, db, signSessionCookie }) => {
+    async ({ auth, membership, db, signSessionCookie }) => {
       const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
       const addMember = () =>
         seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });
@@ -85,7 +85,7 @@ const withGrocery = async (fn: (ctx: GroceryTestContext) => Promise<void>): Prom
       const { scheduler, calls } = createStubCleanup();
       const { announcer, announced } = createStubAnnouncer();
       const app: TestApp = new Hono<{ Variables: SessionVariables }>()
-        .use("/api/*", createRequireSession(auth))
+        .use("/api/*", createRequireSession(auth, membership))
         .route("/api/grocery", createGroceryRoutes({ service, cleanup: scheduler, announcer }));
       await fn({ app, cookie, userId, db, auth, cleanup: calls, announced, addMember });
     },

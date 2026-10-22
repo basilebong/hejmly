@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { AuditEntry, AuditRecorder } from "../audit/recorder.ts";
 import type { Auth } from "../auth/index.ts";
+import type { MembershipService } from "../auth/membership.ts";
 import { oauthClients, oauthConsents } from "../auth/schema.ts";
 import type { Db } from "../db/index.ts";
 import { createRequireSession, type SessionVariables } from "../middleware/session.ts";
@@ -61,9 +62,14 @@ const seedConsent = async (
 
 type TestApp = Hono<{ Variables: SessionVariables }>;
 
-const buildApp = (auth: Auth, db: Db, audit: AuditRecorder): TestApp =>
+const buildApp = (
+  auth: Auth,
+  membership: MembershipService,
+  db: Db,
+  audit: AuditRecorder,
+): TestApp =>
   new Hono<{ Variables: SessionVariables }>()
-    .use("/api/*", createRequireSession(auth))
+    .use("/api/*", createRequireSession(auth, membership))
     .route(
       "/api/me/assistants",
       createAssistantsRoutes({ service: createAssistantsService(db), audit }),
@@ -71,87 +77,96 @@ const buildApp = (auth: Auth, db: Db, audit: AuditRecorder): TestApp =>
 
 describe("assistants routes", () => {
   test("GET /api/me/assistants requires a session", async () => {
-    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db }) => {
+    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, membership, db }) => {
       const { audit } = createCapturingAudit();
-      const app = buildApp(auth, db, audit);
+      const app = buildApp(auth, membership, db, audit);
       const res = await app.request("/api/me/assistants");
       expect(res.status).toBe(401);
     });
   });
 
   test("GET /api/me/assistants returns the signed-in user's assistants", async () => {
-    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db, signSessionCookie }) => {
-      const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie, TEST_EMAIL);
-      await seedConsent(db, {
-        id: "consent-1",
-        clientId: "claude-client",
-        name: "Claude",
-        userId,
-        connectedAt: new Date("2026-05-12T10:00:00.000Z"),
-      });
-      const { audit } = createCapturingAudit();
-      const app = buildApp(auth, db, audit);
+    await withTestAuth(
+      { allowedEmails: TEST_EMAIL },
+      async ({ auth, membership, db, signSessionCookie }) => {
+        const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie, TEST_EMAIL);
+        await seedConsent(db, {
+          id: "consent-1",
+          clientId: "claude-client",
+          name: "Claude",
+          userId,
+          connectedAt: new Date("2026-05-12T10:00:00.000Z"),
+        });
+        const { audit } = createCapturingAudit();
+        const app = buildApp(auth, membership, db, audit);
 
-      const res = await app.request("/api/me/assistants", { headers: { cookie } });
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({
-        assistants: [
-          {
-            id: "consent-1",
-            clientId: "claude-client",
-            name: "Claude",
-            connectedAt: new Date("2026-05-12T10:00:00.000Z").getTime(),
-          },
-        ],
-      });
-    });
+        const res = await app.request("/api/me/assistants", { headers: { cookie } });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({
+          assistants: [
+            {
+              id: "consent-1",
+              clientId: "claude-client",
+              name: "Claude",
+              connectedAt: new Date("2026-05-12T10:00:00.000Z").getTime(),
+            },
+          ],
+        });
+      },
+    );
   });
 
   test("POST /api/me/assistants/:id/revoke revokes and records an audit entry", async () => {
-    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db, signSessionCookie }) => {
-      const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie, TEST_EMAIL);
-      await seedConsent(db, {
-        id: "consent-1",
-        clientId: "claude-client",
-        name: "Claude",
-        userId,
-        connectedAt: new Date("2026-05-12T10:00:00.000Z"),
-      });
-      const { audit, entries } = createCapturingAudit();
-      const app = buildApp(auth, db, audit);
+    await withTestAuth(
+      { allowedEmails: TEST_EMAIL },
+      async ({ auth, membership, db, signSessionCookie }) => {
+        const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie, TEST_EMAIL);
+        await seedConsent(db, {
+          id: "consent-1",
+          clientId: "claude-client",
+          name: "Claude",
+          userId,
+          connectedAt: new Date("2026-05-12T10:00:00.000Z"),
+        });
+        const { audit, entries } = createCapturingAudit();
+        const app = buildApp(auth, membership, db, audit);
 
-      const res = await app.request("/api/me/assistants/consent-1/revoke", {
-        method: "POST",
-        headers: { cookie },
-      });
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ id: "consent-1" });
+        const res = await app.request("/api/me/assistants/consent-1/revoke", {
+          method: "POST",
+          headers: { cookie },
+        });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ id: "consent-1" });
 
-      expect(entries).toHaveLength(1);
-      expect(entries[0]).toMatchObject({
-        userId,
-        action: "assistant.revoke",
-        via: "web",
-        metadata: { clientId: "claude-client" },
-      });
+        expect(entries).toHaveLength(1);
+        expect(entries[0]).toMatchObject({
+          userId,
+          action: "assistant.revoke",
+          via: "web",
+          metadata: { clientId: "claude-client" },
+        });
 
-      const list = await app.request("/api/me/assistants", { headers: { cookie } });
-      expect(await list.json()).toEqual({ assistants: [] });
-    });
+        const list = await app.request("/api/me/assistants", { headers: { cookie } });
+        expect(await list.json()).toEqual({ assistants: [] });
+      },
+    );
   });
 
   test("POST revoke for an unknown consent returns 404 and records nothing", async () => {
-    await withTestAuth({ allowedEmails: TEST_EMAIL }, async ({ auth, db, signSessionCookie }) => {
-      const { cookie } = await seedSessionCookie(auth, signSessionCookie, TEST_EMAIL);
-      const { audit, entries } = createCapturingAudit();
-      const app = buildApp(auth, db, audit);
+    await withTestAuth(
+      { allowedEmails: TEST_EMAIL },
+      async ({ auth, membership, db, signSessionCookie }) => {
+        const { cookie } = await seedSessionCookie(auth, signSessionCookie, TEST_EMAIL);
+        const { audit, entries } = createCapturingAudit();
+        const app = buildApp(auth, membership, db, audit);
 
-      const res = await app.request("/api/me/assistants/does-not-exist/revoke", {
-        method: "POST",
-        headers: { cookie },
-      });
-      expect(res.status).toBe(404);
-      expect(entries).toHaveLength(0);
-    });
+        const res = await app.request("/api/me/assistants/does-not-exist/revoke", {
+          method: "POST",
+          headers: { cookie },
+        });
+        expect(res.status).toBe(404);
+        expect(entries).toHaveLength(0);
+      },
+    );
   });
 });

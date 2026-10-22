@@ -4,11 +4,13 @@ import { createGroceryService } from "@hejmly/app-grocery/server";
 import { createRecipeService } from "@hejmly/app-recipes/server";
 import { createTodoService } from "@hejmly/app-todo/server";
 import {
+  type Auth,
   createAssistantsService,
   createAuditRecorder,
   createPushService,
   type Db,
   linkExistingClientsToResource,
+  type MembershipService,
 } from "@hejmly/core/server";
 import { oauthClientResources } from "@hejmly/core/server/schema";
 import { googleProvisioningSource, withTestAuth } from "@hejmly/core/server/test";
@@ -83,9 +85,19 @@ const firstConsentId = (payload: unknown): string => {
   throw new Error("expected at least one connected assistant");
 };
 
-type McpHarness = { baseURL: string; cookie: string; userId: string; db: Db };
+type McpHarness = {
+  baseURL: string;
+  cookie: string;
+  userId: string;
+  db: Db;
+  signIn: (email: string) => Promise<string>;
+  restart: (options: { allowedEmails: string }) => void;
+};
 
-const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<void> => {
+const withMcpServer = async (
+  run: (h: McpHarness) => Promise<void>,
+  { allowedEmails = "basile@example.com" }: { allowedEmails?: string } = {},
+): Promise<void> => {
   let app: AppType | undefined;
   const server = Bun.serve({
     port: 0,
@@ -94,39 +106,56 @@ const withMcpServer = async (run: (h: McpHarness) => Promise<void>): Promise<voi
   const baseURL = `http://localhost:${server.port}`;
   try {
     await withTestAuth(
-      { allowedEmails: "basile@example.com", baseURL },
-      async ({ auth, db, signSessionCookie }) => {
+      { allowedEmails, baseURL },
+      async ({ auth, membership, db, signSessionCookie, restart }) => {
+        const compose = (current: { auth: Auth; membership: MembershipService }): AppType =>
+          createApp({
+            ...current,
+            db,
+            baseURL,
+            jwksOrigin: baseURL,
+            allowedHosts: [`localhost:${server.port}`],
+            staticRoot: "/nonexistent/hejmly-web-dist",
+            audit: createAuditRecorder(db),
+            assistants: { service: createAssistantsService(db) },
+            grocery: {
+              service: createGroceryService(db),
+              cleanup: noopCleanup,
+              announcer: noopAnnouncer,
+            },
+            recipes: { service: createRecipeService(db) },
+            todo: {
+              service: createTodoService(db, { isMember: current.membership.allowsEmail }),
+            },
+            push: pushFor(db),
+          });
+
         const adapter = await auth.$context;
-        const user = await adapter.internalAdapter.createUser(
-          {
-            name: "Basile",
-            email: "basile@example.com",
-          },
-          googleProvisioningSource,
-        );
-        const session = await adapter.internalAdapter.createSession(user.id);
-        const cookie = `Hejmly.session_token=${await signSessionCookie(session.token)}`;
+        const signInUser = async (email: string): Promise<{ id: string; cookie: string }> => {
+          const user = await adapter.internalAdapter.createUser(
+            { name: email, email },
+            googleProvisioningSource,
+          );
+          const session = await adapter.internalAdapter.createSession(user.id);
+          return {
+            id: user.id,
+            cookie: `Hejmly.session_token=${await signSessionCookie(session.token)}`,
+          };
+        };
+        const basile = await signInUser("basile@example.com");
 
-        app = createApp({
-          auth,
-          db,
+        app = compose({ auth, membership });
+
+        await run({
           baseURL,
-          jwksOrigin: baseURL,
-          allowedHosts: [`localhost:${server.port}`],
-          staticRoot: "/nonexistent/hejmly-web-dist",
-          audit: createAuditRecorder(db),
-          assistants: { service: createAssistantsService(db) },
-          grocery: {
-            service: createGroceryService(db),
-            cleanup: noopCleanup,
-            announcer: noopAnnouncer,
+          cookie: basile.cookie,
+          userId: basile.id,
+          db,
+          signIn: async (email) => (await signInUser(email)).cookie,
+          restart: (options) => {
+            app = compose(restart(options));
           },
-          recipes: { service: createRecipeService(db) },
-          todo: { service: createTodoService(db, { isMember: () => true }) },
-          push: pushFor(db),
         });
-
-        await run({ baseURL, cookie, userId: user.id, db });
       },
     );
   } finally {
@@ -332,6 +361,53 @@ describe("MCP over OAuth (end-to-end)", () => {
         method: "tools/list",
       });
       expect(afterRevoke.status).toBe(200);
+    });
+  });
+});
+
+describe("MCP over OAuth (household membership)", () => {
+  const listTools = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+
+  test("a live token is refused once its user leaves the allowlist; members keep access", async () => {
+    await withMcpServer(
+      async ({ baseURL, cookie, signIn, restart, db }) => {
+        const member = await runClaudeOAuthFlow(baseURL, cookie);
+        const former = await runClaudeOAuthFlow(baseURL, await signIn("former@example.com"));
+        expect((await callMcp(baseURL, former.accessToken, listTools)).status).toBe(200);
+
+        restart({ allowedEmails: "basile@example.com" });
+
+        const refused = await callMcp(baseURL, former.accessToken, {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "grocery__add_item", arguments: { name: "Milk from a former member" } },
+        });
+        expect(refused.status).toBe(403);
+        expect(await refused.json()).toEqual({ error: "forbidden" });
+        expect(db.$client.query("SELECT COUNT(*) AS n FROM grocery_items").get()).toEqual({
+          n: 0,
+        });
+
+        expect((await callMcp(baseURL, member.accessToken, listTools)).status).toBe(200);
+      },
+      { allowedEmails: "basile@example.com,former@example.com" },
+    );
+  });
+
+  test("a membership lookup that fails refuses the call instead of letting it through", async () => {
+    await withMcpServer(async ({ baseURL, cookie, db }) => {
+      const { accessToken } = await runClaudeOAuthFlow(baseURL, cookie);
+      db.$client.run("ALTER TABLE users RENAME TO users_unreachable");
+
+      const res = await callMcp(baseURL, accessToken, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "grocery__add_item", arguments: { name: "Milk during an outage" } },
+      });
+      expect(res.status).toBe(500);
+      expect(db.$client.query("SELECT COUNT(*) AS n FROM grocery_items").get()).toEqual({ n: 0 });
     });
   });
 });

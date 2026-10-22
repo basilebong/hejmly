@@ -34,6 +34,40 @@ describe("auth (integration)", () => {
     });
   });
 
+  test("session.create.before hook refuses a new session for a user who has left the allowlist", async () => {
+    await withTestAuth(
+      { allowedEmails: "basile@example.com,former@example.com" },
+      async ({ auth, db, restart }) => {
+        const ctx = await auth.$context;
+        const former = await ctx.internalAdapter.createUser(
+          { name: "Former", email: "former@example.com" },
+          googleProvisioningSource,
+        );
+        const member = await ctx.internalAdapter.createUser(
+          { name: "Basile", email: "basile@example.com" },
+          googleProvisioningSource,
+        );
+
+        const after = await restart({ allowedEmails: "basile@example.com" }).auth.$context;
+        let caught: unknown;
+        try {
+          await after.internalAdapter.createSession(former.id);
+        } catch (e) {
+          caught = e;
+        }
+        const apiErr = parseApiError(caught);
+        expect(apiErr.statusCode).toBe(403);
+        expect(apiErr.body.message).toContain("former@example.com");
+
+        const memberSession = await after.internalAdapter.createSession(member.id);
+        expect(memberSession.userId).toBe(member.id);
+        expect(db.$client.query("SELECT user_id FROM sessions").all()).toEqual([
+          { user_id: member.id },
+        ]);
+      },
+    );
+  });
+
   test("user.create.before hook rejects a non-allowlisted email", async () => {
     await withTestAuth({ allowedEmails: "basile@example.com" }, async ({ auth, db }) => {
       const ctx = await auth.$context;
