@@ -4,6 +4,7 @@ export * from "./due.ts";
 export * from "./errors.ts";
 export * from "./ids.ts";
 export * from "./local-rows.ts";
+export * from "./names.ts";
 export * from "./order.ts";
 export * from "./state.ts";
 export * from "./text.ts";

@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import {
+  assigneeLabels,
   type DueDate,
   isDone,
   orderOpenTasks,
@@ -24,10 +25,14 @@ export const TaskList = ({
 }: TaskListProps): ReactElement => {
   const open = orderOpenTasks(tasks.filter((t) => !isDone(t.status)));
   const done = tasks.filter((t) => isDone(t.status));
+  const labels = assigneeLabels(tasks);
   const row = (task: Task): ReactElement => (
     <TaskRow
       key={task.id}
       task={task}
+      assigneeLabel={
+        task.assignee === null ? "" : (labels.get(task.assignee.id) ?? task.assignee.name)
+      }
       today={today}
       syncState={syncStateOf(task.id)}
       {...handlersFor(task.id)}

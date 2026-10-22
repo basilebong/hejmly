@@ -16,13 +16,20 @@ export type TaskRowHandlers = {
 
 type TaskRowProps = TaskRowHandlers & {
   task: Task;
+  assigneeLabel: string;
   today: DueDate;
   syncState: SyncState;
 };
 
-const firstName = (name: string): string => name.trim().split(/\s+/)[0] ?? name;
-
-const AssigneeChip = ({ member, done }: { member: TodoMember; done: boolean }): ReactElement => (
+const AssigneeChip = ({
+  member,
+  label,
+  done,
+}: {
+  member: TodoMember;
+  label: string;
+  done: boolean;
+}): ReactElement => (
   <span
     className={cn(
       "inline-flex items-center gap-1.5 rounded-full py-0.5 pr-2 pl-0.5 font-medium text-xs",
@@ -31,12 +38,13 @@ const AssigneeChip = ({ member, done }: { member: TodoMember; done: boolean }): 
   >
     <Avatar author={{ kind: "user", ...member }} size={20} decorative />
     <span className="sr-only">Assigned to </span>
-    {firstName(member.name)}
+    {label}
   </span>
 );
 
 export const TaskRow = ({
   task,
+  assigneeLabel,
   today,
   syncState,
   onOpen,
@@ -75,7 +83,9 @@ export const TaskRow = ({
       {showMeta && (
         <span className="mt-2 flex flex-wrap items-center gap-1.5">
           {task.dueOn !== null && <DueBadge dueOn={task.dueOn} today={today} done={done} />}
-          {task.assignee !== null && <AssigneeChip member={task.assignee} done={done} />}
+          {task.assignee !== null && (
+            <AssigneeChip member={task.assignee} label={assigneeLabel} done={done} />
+          )}
         </span>
       )}
     </>

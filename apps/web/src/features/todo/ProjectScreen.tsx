@@ -137,10 +137,16 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const today = useToday();
   const opener = useRef<HTMLElement | null>(null);
   const drawerNow = useRef(drawer);
-  drawerNow.current = drawer;
+  useEffect(() => {
+    drawerNow.current = drawer;
+  }, [drawer]);
   const restoreFocus = (): void => {
     if (drawerNow.current.kind !== "none") return;
-    if (opener.current?.isConnected) opener.current.focus();
+    if (opener.current?.isConnected) {
+      opener.current.focus();
+      return;
+    }
+    document.querySelector<HTMLElement>("main [aria-haspopup='dialog']")?.focus();
   };
   const backToTask = (current: DrawerState): DrawerState =>
     current.kind === "edit_task" ? { kind: "task", id: current.id } : DRAWER_NONE;
@@ -252,7 +258,10 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         trailing={
           <ProjectActionsMenu
             projectName={project.name}
-            onEdit={() => setDrawer({ kind: "edit_project" })}
+            onEdit={(trigger) => {
+              opener.current = trigger;
+              setDrawer({ kind: "edit_project" });
+            }}
             onRemove={() => setDrawer({ kind: "remove_project" })}
           />
         }
@@ -342,6 +351,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         title="Edit project"
         description="Rename the project or change its description."
         onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
       >
         <EditProjectForm
           initial={project}
@@ -362,6 +372,7 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         onClose={() =>
           setDrawer(removingTask === null ? DRAWER_NONE : { kind: "task", id: removingTask.id })
         }
+        onClosed={restoreFocus}
       />
 
       <ConfirmDrawer
