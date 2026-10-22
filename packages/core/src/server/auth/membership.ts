@@ -27,7 +27,7 @@ export type MembershipError =
 export type MembershipService = {
   allowsEmail(email: unknown): boolean;
   isMember(userId: UserId): Promise<Result<boolean, MembershipError>>;
-  revokeFormerMembers(): Promise<Result<{ revoked: UserId[] }, MembershipError>>;
+  revokeFormerMembers(): Promise<Result<{ formerMembers: UserId[] }, MembershipError>>;
 };
 
 export type CreateMembershipOptions = {
@@ -82,22 +82,22 @@ export const createMembershipService = ({
     }
     try {
       const everyone = await db.select({ id: users.id, email: users.email }).from(users);
-      const revoked = everyone
+      const formerMembers = everyone
         .filter((user) => !isAllowedEmail(allowedEmails, user.email))
         .map((user) => parseUserId(user.id));
-      if (revoked.length === 0) return ok({ revoked });
+      if (formerMembers.length === 0) return ok({ formerMembers });
 
       const { internalAdapter } = await auth.$context;
-      for (const userId of revoked) await internalAdapter.deleteUserSessions(userId);
+      for (const userId of formerMembers) await internalAdapter.deleteUserSessions(userId);
 
-      await db.delete(oauthAccessTokens).where(inArray(oauthAccessTokens.userId, revoked));
-      await db.delete(oauthRefreshTokens).where(inArray(oauthRefreshTokens.userId, revoked));
-      await db.delete(oauthConsents).where(inArray(oauthConsents.userId, revoked));
+      await db.delete(oauthAccessTokens).where(inArray(oauthAccessTokens.userId, formerMembers));
+      await db.delete(oauthRefreshTokens).where(inArray(oauthRefreshTokens.userId, formerMembers));
+      await db.delete(oauthConsents).where(inArray(oauthConsents.userId, formerMembers));
 
       // The OAuth provider keeps an unexchanged authorization code as a
       // verification row whose JSON value names the user; left alone it could
       // still be traded for fresh tokens after this pass.
-      const revokedIds = new Set<UserId>(revoked);
+      const formerIds = new Set<UserId>(formerMembers);
       const pendingCodes = (
         await db
           .select({ id: verifications.id, value: verifications.value })
@@ -106,14 +106,14 @@ export const createMembershipService = ({
       )
         .filter((row) => {
           const owner = authorizationCodeOwner(row.value);
-          return owner !== null && revokedIds.has(owner);
+          return owner !== null && formerIds.has(owner);
         })
         .map((row) => row.id);
       if (pendingCodes.length > 0) {
         await db.delete(verifications).where(inArray(verifications.id, pendingCodes));
       }
 
-      return ok({ revoked });
+      return ok({ formerMembers });
     } catch (e) {
       return err(internalError(e));
     }

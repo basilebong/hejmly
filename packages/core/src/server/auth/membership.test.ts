@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { parseUserId } from "../../shared/index.ts";
+import { parseUserId, type UserId } from "../../shared/index.ts";
 import type { Db } from "../db/index.ts";
 import { googleProvisioningSource, withTestAuth } from "../test/with-test-auth.ts";
 import type { Auth } from "./index.ts";
@@ -17,17 +17,17 @@ import {
 const MEMBER = "basile@example.com";
 const FORMER = "former@example.com";
 
-const seedUser = async (auth: Auth, email: string): Promise<string> => {
+const seedUser = async (auth: Auth, email: string): Promise<UserId> => {
   const ctx = await auth.$context;
   const user = await ctx.internalAdapter.createUser(
     { name: email, email },
     googleProvisioningSource,
   );
   await ctx.internalAdapter.createSession(user.id);
-  return user.id;
+  return parseUserId(user.id);
 };
 
-const seedOAuthGrant = async (db: Db, userId: string, clientId: string): Promise<void> => {
+const seedOAuthGrant = async (db: Db, userId: UserId, clientId: string): Promise<void> => {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
   await db.insert(oauthClients).values({
@@ -68,7 +68,7 @@ const seedOAuthGrant = async (db: Db, userId: string, clientId: string): Promise
   });
 };
 
-const seedPendingCode = async (db: Db, userId: string): Promise<void> => {
+const seedPendingCode = async (db: Db, userId: UserId): Promise<void> => {
   const now = new Date();
   await db.insert(verifications).values({
     id: crypto.randomUUID(),
@@ -80,14 +80,14 @@ const seedPendingCode = async (db: Db, userId: string): Promise<void> => {
   });
 };
 
-const pendingCodesOf = (db: Db, userId: string): unknown =>
+const pendingCodesOf = (db: Db, userId: UserId): unknown =>
   db.$client
     .query(
       "SELECT COUNT(*) AS n FROM verifications WHERE CASE WHEN json_valid(value) THEN json_extract(value, '$.userId') END = ?",
     )
     .get(userId);
 
-const rowsOwnedBy = async (db: Db, userId: string) => ({
+const rowsOwnedBy = async (db: Db, userId: UserId) => ({
   sessions: (await db.select().from(sessions)).filter((r) => r.userId === userId).length,
   accessTokens: (await db.select().from(oauthAccessTokens)).filter((r) => r.userId === userId)
     .length,
@@ -108,7 +108,7 @@ describe("membership", () => {
   test("isMember is true for a user whose email is on the allowlist", async () => {
     await withTestAuth({ allowedEmails: MEMBER }, async ({ auth, membership }) => {
       const userId = await seedUser(auth, MEMBER);
-      expect(await membership.isMember(parseUserId(userId))).toEqual({ kind: "ok", value: true });
+      expect(await membership.isMember(userId)).toEqual({ kind: "ok", value: true });
     });
   });
 
@@ -116,7 +116,7 @@ describe("membership", () => {
     await withTestAuth({ allowedEmails: `${MEMBER},${FORMER}` }, async ({ auth, restart }) => {
       const userId = await seedUser(auth, FORMER);
       const { membership } = restart({ allowedEmails: MEMBER });
-      expect(await membership.isMember(parseUserId(userId))).toEqual({ kind: "ok", value: false });
+      expect(await membership.isMember(userId)).toEqual({ kind: "ok", value: false });
     });
   });
 
@@ -139,7 +139,7 @@ describe("membership", () => {
       const { membership } = restart({ allowedEmails: MEMBER });
       const result = await membership.revokeFormerMembers();
 
-      expect(result).toEqual({ kind: "ok", value: { revoked: [parseUserId(formerId)] } });
+      expect(result).toEqual({ kind: "ok", value: { formerMembers: [formerId] } });
       expect(await rowsOwnedBy(db, formerId)).toEqual({
         sessions: 0,
         accessTokens: 0,
@@ -163,7 +163,7 @@ describe("membership", () => {
 
       expect(await membership.revokeFormerMembers()).toEqual({
         kind: "ok",
-        value: { revoked: [] },
+        value: { formerMembers: [] },
       });
       expect(await rowsOwnedBy(db, memberId)).toEqual({
         sessions: 1,

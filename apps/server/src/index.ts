@@ -50,9 +50,10 @@ if (revocation.kind === "err") {
   console.error(`Hejmly server could not revoke former members: ${revocation.error.message}`);
   process.exit(1);
 }
-if (revocation.value.revoked.length > 0) {
+const { formerMembers } = revocation.value;
+if (formerMembers.length > 0) {
   console.info(
-    `Hejmly server revoked sessions and assistant tokens of ${revocation.value.revoked.length} user(s) no longer on HEJMLY_ALLOWED_EMAILS`,
+    `Hejmly server: ${formerMembers.length} user(s) not on HEJMLY_ALLOWED_EMAILS; their sessions and assistant grants are revoked`,
   );
 }
 
