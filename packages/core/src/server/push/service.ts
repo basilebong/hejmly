@@ -256,6 +256,10 @@ export const createPushService = (db: Db, options: PushServiceOptions): PushServ
             if (status >= 200 && status < 300) return "sent";
             if (status === 404 || status === 410) {
               await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, target.id));
+              console.info("push: device gone, removed", {
+                origin: originOf(target.endpoint),
+                status,
+              });
               return "removed";
             }
             console.error("push: delivery rejected", { origin: originOf(target.endpoint), status });

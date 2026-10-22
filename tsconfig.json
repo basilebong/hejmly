@@ -8,6 +8,7 @@
     { "path": "./packages/app-todo" },
     { "path": "./apps/server" },
     { "path": "./apps/web" },
-    { "path": "./apps/web/tsconfig.test.json" }
+    { "path": "./apps/web/tsconfig.test.json" },
+    { "path": "./apps/web/tsconfig.sw.json" }
   ]
 }

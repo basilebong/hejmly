@@ -8,29 +8,12 @@ import { VitePWA } from "vite-plugin-pwa";
 const env = parseEnv(process.env);
 const apiTarget = `http://localhost:${env.PORT}`;
 
-const matchApiRequest = ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }): boolean =>
-  sameOrigin && url.pathname.startsWith("/api/");
-
-const MUTATION_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as const;
-
 const vendorChunk = (id: string): string | undefined => {
   if (!id.includes("node_modules")) return undefined;
   if (id.includes("@tanstack")) return "tanstack";
   if (id.includes("@phosphor-icons")) return "icons";
   return "vendor";
 };
-
-const apiMutationRoute = (method: (typeof MUTATION_METHODS)[number]) => ({
-  urlPattern: matchApiRequest,
-  handler: "NetworkOnly" as const,
-  method,
-  options: {
-    backgroundSync: {
-      name: `Hejmly-mutations-${method.toLowerCase()}`,
-      options: { maxRetentionTime: 24 * 60 },
-    },
-  },
-});
 
 export default defineConfig({
   define: {
@@ -49,6 +32,9 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       includeAssets: ["favicon.ico", "favicon.svg", "apple-touch-icon.png"],
       manifest: {
         name: "Hejmly",
@@ -72,14 +58,8 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest,woff,woff2}"],
-        navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/mcp/, /^\/\.well-known/, /^\/healthz/],
-        cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
-        runtimeCaching: MUTATION_METHODS.map(apiMutationRoute),
       },
     }),
   ],

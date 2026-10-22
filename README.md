@@ -237,6 +237,19 @@ Caddy). Claude finds the OAuth endpoints via
 `/.well-known/oauth-protected-resource`, registers itself, and walks you through
 the same Google sign-in + consent. Remote connectors require HTTPS.
 
+## Push notifications
+
+Hejmly can notify household members on their phones and browsers (for
+example when someone adds to the grocery list). There is nothing to
+configure: the server creates its own VAPID key pair on first use and keeps
+it in the database. It only needs outbound HTTPS to the browsers' push
+services (`fcm.googleapis.com`, `updates.push.services.mozilla.com`,
+`*.push.apple.com`, `*.notify.windows.com`).
+
+Each person turns notifications on per device under **Me → Notifications**;
+the browser then asks for permission. On iPhone and iPad this only works in
+the installed app (Share → Add to Home Screen), not in a Safari tab.
+
 ## Common commands
 
 | Command                    | What                                            |

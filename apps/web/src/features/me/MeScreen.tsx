@@ -10,7 +10,9 @@ import { fetchAssistants, revokeAssistant } from "@/lib/me-api";
 import { AssistantsSection } from "./atoms/AssistantsSection";
 import { IdentityRow } from "./atoms/IdentityRow";
 import { MeTopBar } from "./atoms/MeTopBar";
+import { NotificationsSection } from "./atoms/NotificationsSection";
 import { SignOutButton } from "./atoms/SignOutButton";
+import { useNotifications } from "./use-notifications";
 
 const ASSISTANTS_QUERY_KEY = ["me", "assistants"] as const;
 const UNDO_WINDOW_MS = 5000;
@@ -33,6 +35,7 @@ export const MeScreen = (): ReactElement => {
   const qc = useQueryClient();
   const session = useSession();
   const identity = deriveIdentity(session.data?.user);
+  const notifications = useNotifications();
 
   const [hidden, setHidden] = useState<ReadonlySet<OAuthConsentId>>(() => new Set());
   const [signingOut, setSigningOut] = useState(false);
@@ -128,6 +131,7 @@ export const MeScreen = (): ReactElement => {
           email={identity.email}
           initial={identity.initial}
         />
+        <NotificationsSection notifications={notifications} />
         <AssistantsSection
           isPending={assistants.isPending}
           isError={assistants.isError}
