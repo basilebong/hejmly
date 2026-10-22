@@ -2,7 +2,6 @@ import {
   type CreateTaskInput,
   countTasks,
   isLocalId,
-  localDueDate,
   localIdSeed,
   type ProjectId,
   ProjectIdSchema,
@@ -27,7 +26,7 @@ import {
 import { ArrowLeftIcon, ListChecksIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { type ReactElement, type ReactNode, useEffect, useState } from "react";
+import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { match } from "ts-pattern";
 import * as v from "valibot";
@@ -46,6 +45,7 @@ import { useTodoCacheEnv } from "./env.ts";
 import { FormDrawer } from "./FormDrawer.tsx";
 import { createTaskKey, projectQueryKey } from "./keys.ts";
 import { useLocalRowStates } from "./mutation-state.ts";
+import { useToday } from "./use-today.ts";
 
 type DrawerState =
   | { kind: "none" }
@@ -130,10 +130,18 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const localStates = useLocalRowStates(createTaskKey(id));
 
   const detail = useQuery(projectDetailQuery(env, id));
-  const members = useQuery(membersQuery(env)).data ?? [];
+  const membersResult = useQuery(membersQuery(env));
+  const members = membersResult.data ?? [];
   const me = env.author();
   const meId = me.kind === "user" ? me.id : null;
-  const today = localDueDate(new Date());
+  const today = useToday();
+  const opener = useRef<HTMLElement | null>(null);
+  const drawerNow = useRef(drawer);
+  drawerNow.current = drawer;
+  const restoreFocus = (): void => {
+    if (drawerNow.current.kind !== "none") return;
+    if (opener.current?.isConnected) opener.current.focus();
+  };
   const backToTask = (current: DrawerState): DrawerState =>
     current.kind === "edit_task" ? { kind: "task", id: current.id } : DRAWER_NONE;
   const mutations = projectMutations(env, id, () => setDrawer(backToTask));
@@ -153,6 +161,10 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   };
 
   const tasks = detail.data?.tasks ?? [];
+
+  useEffect(() => {
+    if (membersResult.isError) toast.error("Couldn't load household members");
+  }, [membersResult.isError]);
 
   useEffect(() => {
     if (drawer.kind !== "task" && drawer.kind !== "edit_task" && drawer.kind !== "remove_task") {
@@ -189,8 +201,10 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
   const { project } = detail.data;
 
   const handlersFor = (taskId: TaskId): TaskRowHandlers => ({
-    onOpen: () => {
-      if (!isLocalId(taskId)) setDrawer({ kind: "task", id: taskId });
+    onOpen: (trigger) => {
+      if (isLocalId(taskId)) return;
+      opener.current = trigger;
+      setDrawer({ kind: "task", id: taskId });
     },
     onToggle: (done: boolean) => {
       if (!isLocalId(taskId)) toggle.mutate({ taskId, done });
@@ -253,13 +267,20 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
           handlersFor={handlersFor}
         />
       )}
-      <Fab onClick={() => setDrawer({ kind: "add_task" })} label="Add task" />
+      <Fab
+        onClick={(e) => {
+          opener.current = e.currentTarget;
+          setDrawer({ kind: "add_task" });
+        }}
+        label="Add task"
+      />
 
       <FormDrawer
         open={drawer.kind === "add_task"}
-        title="Add a task"
-        description="Describe the task. Due date, assignee and notes are optional."
+        title="Add task"
+        description="Due date, assignee and notes are optional."
         onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
       >
         <AddTaskForm
           members={members}
@@ -277,18 +298,21 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
         open={viewingTask !== null}
         description="Task details"
         onClose={() => setDrawer(DRAWER_NONE)}
+        onClosed={restoreFocus}
       >
-        {(renderTitle) =>
+        {(title) =>
           viewingTask !== null && (
             <TaskDetail
               task={viewingTask}
               projectName={project.name}
               today={today}
               members={members}
-              renderTitle={renderTitle}
+              titleRef={title.ref}
+              renderTitle={title.render}
               onToggle={(done) => toggle.mutate({ taskId: viewingTask.id, done })}
               onEdit={() => setDrawer({ kind: "edit_task", id: viewingTask.id })}
               onRemove={() => setDrawer({ kind: "remove_task", id: viewingTask.id })}
+              onClose={() => setDrawer(DRAWER_NONE)}
             />
           )
         }
@@ -297,11 +321,12 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
       <FormDrawer
         open={editingTask !== null}
         title="Edit task"
-        description="Change the task, its due date, who it's assigned to, or its notes."
+        description="Change the title, due date, assignee or notes."
         onClose={() => setDrawer(backToTask)}
       >
         {editingTask !== null && (
           <EditTaskForm
+            key={editingTask.id}
             initial={editingTask}
             members={members}
             meId={meId}
@@ -327,14 +352,16 @@ const ProjectView = ({ id }: { id: ProjectId }): ReactElement => {
 
       <ConfirmDrawer
         open={removingTask !== null}
-        title={`Remove ${removingTask?.title ?? "task"}?`}
-        description="This can't be undone — the task will be gone for everyone in the household."
-        confirmLabel="Remove"
+        title="Delete this task?"
+        description={`“${removingTask?.title ?? ""}” will be deleted for everyone in the household. This can't be undone.`}
+        confirmLabel="Delete task"
         onConfirm={() => {
           if (removingTask !== null) removeTask.mutate(removingTask.id);
           setDrawer(DRAWER_NONE);
         }}
-        onClose={() => setDrawer(DRAWER_NONE)}
+        onClose={() =>
+          setDrawer(removingTask === null ? DRAWER_NONE : { kind: "task", id: removingTask.id })
+        }
       />
 
       <ConfirmDrawer

@@ -10,7 +10,7 @@ const toneClass: Record<Tone, string> = {
   overdue: "bg-rose-50 text-rose-700 ring-rose-200",
   today: "bg-amber-50 text-amber-800 ring-amber-200",
   soon: "bg-slate-50 text-slate-600 ring-slate-200",
-  muted: "bg-transparent text-slate-400 ring-slate-200",
+  muted: "bg-transparent text-slate-500 ring-slate-300",
 };
 
 type DueBadgeProps = {

@@ -56,8 +56,9 @@ export const toAuthor = (user: AuthorRow): TodoAuthor => {
 };
 
 export const toMember = (user: NonNullable<AuthorRow>): TodoMember => {
-  const author = toAuthor(user);
-  return { id: parseUserId(user.id), name: author.name, initial: author.initial };
+  const name = user.name?.trim() ?? "";
+  const shown = name.length > 0 ? name : "Member";
+  return { id: parseUserId(user.id), name: shown, initial: initialOf(shown) };
 };
 
 const parseDueOn = (rowId: string, raw: string | null): Task["dueOn"] => {

@@ -1,8 +1,8 @@
 import { PlusIcon } from "@phosphor-icons/react";
-import type { ReactElement } from "react";
+import type { MouseEvent, ReactElement } from "react";
 
 type FabProps = {
-  onClick: () => void;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   label: string;
 };
 

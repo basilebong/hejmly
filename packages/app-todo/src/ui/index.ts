@@ -9,7 +9,7 @@ export { ProjectHeader } from "./ProjectHeader.tsx";
 export { ProjectRow } from "./ProjectRow.tsx";
 export { ProjectsTopBar } from "./ProjectsTopBar.tsx";
 export { ProjectsSkeleton, TasksSkeleton } from "./Skeletons.tsx";
-export { TaskDetail } from "./TaskDetail.tsx";
+export { type DetailTitleProps, TaskDetail } from "./TaskDetail.tsx";
 export { AddTaskForm, EditTaskForm } from "./TaskForms.tsx";
 export { TaskList } from "./TaskList.tsx";
 export { TaskRow, type TaskRowHandlers } from "./TaskRow.tsx";

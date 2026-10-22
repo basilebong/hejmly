@@ -12,13 +12,13 @@ import {
   type TodoMember,
   type UpdateTaskInput,
 } from "../shared/index.ts";
+import { cn } from "./cn.ts";
 import { DuePicker } from "./DuePicker.tsx";
 import { MemberPicker } from "./MemberPicker.tsx";
 
-type Copy = { heading: string; submitLabel: string };
-
 type TaskFormProps<T> = {
-  copy: Copy;
+  submitLabel: string;
+  autoFocusTitle: boolean;
   initial: TaskDraft;
   members: readonly TodoMember[];
   meId: UserId | null;
@@ -28,15 +28,18 @@ type TaskFormProps<T> = {
   onCancel: () => void;
 };
 
-const labelClass = "font-medium text-slate-500 text-xs uppercase tracking-wider";
+const labelClass = "font-medium text-slate-600 text-xs uppercase tracking-wider";
 const optionalHint = (
   <span className="font-normal text-slate-500 normal-case tracking-normal"> — optional</span>
 );
+const fieldClass =
+  "mt-1.5 block w-full resize-none rounded-xl border-[1.5px] border-slate-500 bg-white px-4 py-2.5 text-base outline-none transition-colors placeholder:text-slate-500 focus:border-slate-900 focus:ring-1 focus:ring-slate-900";
 
 const singleLine = (raw: string): string => raw.replace(/\s*[\r\n]+\s*/g, " ");
 
 const TaskForm = <T,>({
-  copy,
+  submitLabel,
+  autoFocusTitle,
   initial,
   members,
   meId,
@@ -49,14 +52,12 @@ const TaskForm = <T,>({
   const [error, setError] = useState<string | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const ids = { title: useId(), notes: useId(), due: useId() };
+  const ids = { title: useId(), notes: useId(), due: useId(), assignee: useId(), error: useId() };
 
   useEffect(() => {
-    const el = titleRef.current;
-    if (el === null) return;
-    el.focus();
-    el.setSelectionRange(el.value.length, el.value.length);
-  }, []);
+    if (!autoFocusTitle) return;
+    titleRef.current?.focus();
+  }, [autoFocusTitle]);
 
   const set = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]): void =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -65,7 +66,10 @@ const TaskForm = <T,>({
     e.preventDefault();
     match(validate(draft))
       .with({ kind: "unchanged" }, () => onCancel())
-      .with({ kind: "error" }, (r) => setError(r.message))
+      .with({ kind: "error" }, (r) => {
+        setError(r.message);
+        titleRef.current?.focus();
+      })
       .with({ kind: "ok" }, (r) => {
         setError(null);
         onSubmit(r.value);
@@ -76,9 +80,7 @@ const TaskForm = <T,>({
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-2">
-        <div className="font-semibold text-lg text-slate-900">{copy.heading}</div>
-
-        <div className="mt-5 space-y-5">
+        <div className="mt-2 space-y-5">
           <div>
             <label htmlFor={ids.title} className={labelClass}>
               Task
@@ -99,7 +101,12 @@ const TaskForm = <T,>({
                 formRef.current?.requestSubmit();
               }}
               placeholder="Order tomato seedlings"
-              className="mt-1.5 block max-h-40 min-h-12 w-full resize-none rounded-xl border-[1.5px] border-slate-200 bg-white px-4 py-2.5 font-medium text-base text-slate-900 leading-snug outline-none transition-colors [field-sizing:content] placeholder:font-normal placeholder:text-slate-400 focus:border-slate-900"
+              aria-invalid={error !== null}
+              aria-describedby={error === null ? undefined : ids.error}
+              className={cn(
+                fieldClass,
+                "max-h-40 min-h-12 font-medium text-slate-900 leading-snug [field-sizing:content] placeholder:font-normal",
+              )}
             />
           </div>
 
@@ -116,10 +123,12 @@ const TaskForm = <T,>({
           </fieldset>
 
           <fieldset>
-            <legend className={labelClass}>Assigned to{optionalHint}</legend>
+            <legend id={ids.assignee} className={labelClass}>
+              Assigned to{optionalHint}
+            </legend>
             <div className="mt-1.5">
               <MemberPicker
-                label="Assigned to"
+                labelledBy={ids.assignee}
                 members={members}
                 meId={meId}
                 value={draft.assigneeId}
@@ -141,14 +150,15 @@ const TaskForm = <T,>({
               value={draft.notes}
               onChange={(e) => set("notes", e.currentTarget.value)}
               placeholder="Six plants, the cherry kind"
-              className="mt-1.5 block min-h-24 w-full resize-none rounded-xl border-[1.5px] border-slate-200 bg-white px-4 py-2.5 text-base text-slate-700 leading-relaxed outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900"
+              className={cn(fieldClass, "min-h-24 text-slate-800 leading-relaxed")}
             />
           </div>
 
           {error !== null && (
             <div
+              id={ids.error}
               role="alert"
-              className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-[13px] text-rose-700"
+              className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700 text-sm"
             >
               {error}
             </div>
@@ -161,12 +171,12 @@ const TaskForm = <T,>({
           type="submit"
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 font-medium text-base text-white transition active:scale-[0.98]"
         >
-          {copy.submitLabel}
+          {submitLabel}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="flex min-h-12 w-full items-center justify-center rounded-2xl text-base text-slate-600"
+          className="flex min-h-12 w-full items-center justify-center rounded-2xl text-base text-slate-700"
         >
           Cancel
         </button>
@@ -190,7 +200,8 @@ export const AddTaskForm = ({
 }: SharedProps & { onSubmit: (input: CreateTaskInput) => void }): ReactElement => (
   <TaskForm
     {...shared}
-    copy={{ heading: "Add task", submitLabel: "Add task" }}
+    submitLabel="Add task"
+    autoFocusTitle
     initial={EMPTY}
     validate={parseTaskDraft}
     onSubmit={onSubmit}
@@ -200,21 +211,29 @@ export const AddTaskForm = ({
 export const EditTaskForm = ({
   initial,
   onSubmit,
+  members,
   ...shared
 }: SharedProps & {
   initial: Task;
   onSubmit: (input: UpdateTaskInput) => void;
 }): ReactElement => {
-  const current = {
+  const [current] = useState(() => ({
     title: initial.title,
     notes: initial.notes,
     dueOn: initial.dueOn,
     assigneeId: initial.assignee?.id ?? null,
-  };
+  }));
+  const [assignee] = useState(initial.assignee);
+  const choices =
+    assignee === null || members.some((m) => m.id === assignee.id)
+      ? members
+      : [...members, assignee];
   return (
     <TaskForm
       {...shared}
-      copy={{ heading: "Edit task", submitLabel: "Save changes" }}
+      members={choices}
+      submitLabel="Save changes"
+      autoFocusTitle={false}
       initial={{
         title: current.title,
         notes: current.notes ?? "",

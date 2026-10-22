@@ -8,7 +8,7 @@ import { Avatar } from "./Avatar.tsx";
 const NOBODY = "";
 
 type MemberPickerProps = {
-  label: string;
+  labelledBy: string;
   members: readonly TodoMember[];
   meId: UserId | null;
   value: UserId | null;
@@ -16,10 +16,10 @@ type MemberPickerProps = {
 };
 
 const optionClass =
-  "flex min-h-11 items-center gap-2 rounded-full border-[1.5px] border-slate-200 bg-white py-1.5 pr-3.5 pl-1.5 text-[15px] text-slate-700 outline-none transition data-[state=checked]:border-slate-900 data-[state=checked]:bg-slate-900 data-[state=checked]:text-white focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2";
+  "flex min-h-11 items-center gap-2 rounded-full border-[1.5px] border-slate-300 bg-white py-1.5 pr-3.5 pl-1.5 text-[15px] text-slate-700 outline-none transition data-[state=checked]:border-slate-900 data-[state=checked]:bg-slate-900 data-[state=checked]:text-white focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2";
 
 export const MemberPicker = ({
-  label,
+  labelledBy,
   members,
   meId,
   value,
@@ -31,7 +31,7 @@ export const MemberPicker = ({
   ];
   return (
     <RadioGroup.Root
-      aria-label={label}
+      aria-labelledby={labelledBy}
       value={value ?? NOBODY}
       onValueChange={(next) => {
         onChange(next === NOBODY ? null : (members.find((m) => m.id === next)?.id ?? null));
@@ -39,7 +39,7 @@ export const MemberPicker = ({
       className="flex flex-wrap gap-2"
     >
       <RadioGroup.Item value={NOBODY} className={optionClass}>
-        <span className="grid size-7 place-items-center rounded-full bg-slate-100 text-slate-400">
+        <span className="grid size-7 place-items-center rounded-full bg-slate-100 text-slate-500">
           <UserCircleIcon size={18} aria-hidden="true" />
         </span>
         Nobody

@@ -656,4 +656,22 @@ describe("todo due dates and assignees", () => {
       });
     });
   });
+
+  test("a member without a name is listed without leaking their email", async () => {
+    await withTodo(async ({ app, cookie, db }) => {
+      const now = new Date();
+      await db.insert(users).values({
+        id: "u_blank",
+        name: "  ",
+        email: MEMBER_EMAIL,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const res = await send(app, cookie, "GET", "/api/todo/members");
+      const body = JSON.stringify(await res.json());
+      expect(body).not.toContain("@");
+      expect(body).toContain('{"id":"u_blank","name":"Member","initial":"M"}');
+    });
+  });
 });
