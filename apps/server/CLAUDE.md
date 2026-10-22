@@ -7,6 +7,10 @@ Composition only — NO business logic.
 - Better Auth handler mounted at `/api/auth/*` MUST come BEFORE any middleware
   that calls `auth.api.getSession`.
 - `requireSession` gates `/api/*` (browser sessions).
+- Household membership (`HEJMLY_ALLOWED_EMAILS`) is enforced on every request,
+  not just at sign-up: `requireSession` and the MCP guard both answer 403 for a
+  user no longer on the list, and `index.ts` revokes their sessions and OAuth
+  grants at boot (`MembershipService.revokeFormerMembers`) before serving.
 - `/mcp` is gated by the OAuth token guard (`createMcpAuthGuard`, built on
   `oauthProviderResourceClient().verifyAccessTokenRequest`), NOT by
   `requireSession` — so it is mounted OUTSIDE `/api/*` (see `mcp.ts`).

@@ -8,7 +8,7 @@ import type { RecipeService } from "@hejmly/app-recipes/server";
 import { registerRecipeTools } from "@hejmly/app-recipes/tools";
 import type { TodoService } from "@hejmly/app-todo/server";
 import { registerTodoTools } from "@hejmly/app-todo/tools";
-import type { AuditRecorder } from "@hejmly/core/server";
+import type { AuditRecorder, MembershipService } from "@hejmly/core/server";
 import {
   createAuthServerMetadataHandler,
   createMcpAuthGuard,
@@ -22,6 +22,7 @@ import { cors } from "hono/cors";
 
 export type McpDeps = {
   authHandler: (req: Request) => Promise<Response>;
+  membership: MembershipService;
   baseURL: string;
   jwksOrigin: string;
   allowedHosts: readonly string[];
@@ -35,6 +36,7 @@ export type McpDeps = {
 
 export const mountMcp = ({
   authHandler,
+  membership,
   baseURL,
   jwksOrigin,
   allowedHosts,
@@ -46,7 +48,10 @@ export const mountMcp = ({
   announcer,
 }: McpDeps) => {
   const config = deriveMcpAuthConfig(baseURL, jwksOrigin);
-  const handle = createMcpAuthGuard(config)((req, actor) =>
+  const handle = createMcpAuthGuard(
+    config,
+    membership,
+  )((req, actor) =>
     runMcpRequest((server) => {
       registerGroceryTools(server, { service: grocery, actor, audit, cleanup, announcer });
       registerRecipeTools(server, { service: recipes, actor, audit });

@@ -17,6 +17,7 @@ import {
   createPushRoutes,
   createRequireSession,
   type Db,
+  type MembershipService,
   type PushService,
 } from "@hejmly/core/server";
 import { Hono } from "hono";
@@ -33,6 +34,7 @@ const isValidationError = (err: unknown): boolean =>
 
 export type ComposeOptions = {
   auth: Auth;
+  membership: MembershipService;
   db: Db;
   baseURL: string;
   jwksOrigin: string;
@@ -60,6 +62,7 @@ export type ComposeOptions = {
 
 export const createApp = ({
   auth,
+  membership,
   db,
   baseURL,
   jwksOrigin,
@@ -82,6 +85,7 @@ export const createApp = ({
       "/",
       mountMcp({
         authHandler: (req) => auth.handler(req),
+        membership,
         baseURL,
         jwksOrigin,
         allowedHosts,
@@ -94,7 +98,7 @@ export const createApp = ({
       }),
     )
     .use("/api/*", csrf({ origin: baseURL }))
-    .use("/api/*", createRequireSession(auth))
+    .use("/api/*", createRequireSession(auth, membership))
     .use("/api/*", createIdempotency(db))
     .get("/api/me", (c) => c.json({ user: c.get("user") }))
     .route("/api/me/assistants", createAssistantsRoutes({ service: assistants.service, audit }))

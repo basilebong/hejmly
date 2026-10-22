@@ -43,11 +43,11 @@ const seedSessionCookie = async (
 const withRecipes = async (fn: (ctx: RecipeTestContext) => Promise<void>): Promise<void> => {
   await withTestAuth(
     { allowedEmails: `${TEST_EMAIL},${MEMBER_EMAIL}` },
-    async ({ auth, db, signSessionCookie }) => {
+    async ({ auth, membership, db, signSessionCookie }) => {
       const { userId, cookie } = await seedSessionCookie(auth, signSessionCookie);
       const service = createRecipeService(db);
       const app: TestApp = new Hono<{ Variables: SessionVariables }>()
-        .use("/api/*", createRequireSession(auth))
+        .use("/api/*", createRequireSession(auth, membership))
         .route("/api/recipes", createRecipeRoutes({ service }));
       const addMember = () =>
         seedSessionCookie(auth, signSessionCookie, { name: "Anna", email: MEMBER_EMAIL });

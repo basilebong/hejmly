@@ -1,6 +1,7 @@
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { isAPIError } from "better-auth/api";
 import { parseUserId, type UserId } from "../../shared/index.ts";
+import type { MembershipService } from "../auth/membership.ts";
 
 export type McpAuthConfig = {
   issuer: string;
@@ -27,13 +28,13 @@ export type AuthedMcpHandler = (req: Request, actor: UserId) => Promise<Response
 type ResourceActions = ReturnType<ReturnType<typeof oauthProviderResourceClient>["getActions"]>;
 type VerifiedToken = Awaited<ReturnType<ResourceActions["verifyAccessTokenRequest"]>>;
 
-const invalidToken = (): Response =>
-  new Response(JSON.stringify({ error: "invalid_token" }), {
-    status: 401,
+const jsonError = (error: string, status: number): Response =>
+  new Response(JSON.stringify({ error }), {
+    status,
     headers: { "content-type": "application/json" },
   });
 
-export const createMcpAuthGuard = (config: McpAuthConfig) => {
+export const createMcpAuthGuard = (config: McpAuthConfig, membership: MembershipService) => {
   const { verifyAccessTokenRequest } = oauthProviderResourceClient().getActions();
 
   return (handler: AuthedMcpHandler): ((req: Request) => Promise<Response>) =>
@@ -57,7 +58,15 @@ export const createMcpAuthGuard = (config: McpAuthConfig) => {
         });
       }
 
-      if (typeof jwt.sub !== "string") return invalidToken();
-      return await handler(req, parseUserId(jwt.sub));
+      if (typeof jwt.sub !== "string") return jsonError("invalid_token", 401);
+      const actor = parseUserId(jwt.sub);
+
+      // The JWT is verified locally and outlives any change to the allowlist, so
+      // membership is re-read on every request rather than trusted from the token.
+      const member = await membership.isMember(actor);
+      if (member.kind === "err") throw new Error(member.error.message);
+      if (!member.value) return jsonError("forbidden", 403);
+
+      return await handler(req, actor);
     };
 };

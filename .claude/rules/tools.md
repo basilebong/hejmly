@@ -41,8 +41,10 @@ wrapper over `verifyAccessTokenRequest` from
 checks issuer + audience, enforces DPoP binding when the token carries one, and
 yields `jwt.sub` (the `UserId`). Rejections come back as an `APIError` already
 carrying the RFC 6750 / RFC 9728 `WWW-Authenticate` challenge, which the guard
-turns into the 401 response. Every tool call records `{ userId, via: "mcp" }`
-in the audit log.
+turns into the 401 response. It then re-reads the user's email and refuses with
+403 unless it is still on `HEJMLY_ALLOWED_EMAILS` (`MembershipService.isMember`):
+the JWT is verified locally, so it would otherwise outlive the member's removal.
+Every tool call records `{ userId, via: "mcp" }` in the audit log.
 
 The MCP audience is a registered *resource*, not a free-form audience list:
 `oauthProvider({ resources: [mcpResource], clientRegistrationDefaultResources:

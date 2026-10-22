@@ -4,6 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { jwt } from "better-auth/plugins";
 import type { Db } from "../db/index.ts";
 import { checkEmailAllowed } from "./check-email-allowed.ts";
+import { findUserEmail } from "./membership.ts";
 import * as authSchema from "./schema.ts";
 
 export type CreateAuthOptions = {
@@ -98,6 +99,16 @@ export const createAuth = (opts: CreateAuthOptions) => {
         create: {
           before: async (user) => {
             checkEmailAllowed(opts.allowedEmails, user.email);
+          },
+        },
+      },
+      // The user hook above only fires on first sign-up. A user whose row
+      // survives their removal from the allowlist would otherwise sign straight
+      // back in, so membership is re-checked whenever a session is minted.
+      session: {
+        create: {
+          before: async (session) => {
+            checkEmailAllowed(opts.allowedEmails, await findUserEmail(opts.db, session.userId));
           },
         },
       },

@@ -16,6 +16,12 @@ export { isAllowedEmail, parseAllowedEmails } from "./auth/allowlist.ts";
 export { linkExistingClientsToResource, type ResourceBackfill } from "./auth/backfill.ts";
 export { checkEmailAllowed } from "./auth/check-email-allowed.ts";
 export { type Auth, type CreateAuthOptions, createAuth } from "./auth/index.ts";
+export {
+  type CreateMembershipOptions,
+  createMembershipService,
+  type MembershipError,
+  type MembershipService,
+} from "./auth/membership.ts";
 export { createDb, type Db } from "./db/index.ts";
 export {
   describeForeignKeyViolations,
