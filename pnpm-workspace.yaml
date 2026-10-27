@@ -76,8 +76,8 @@ overrides:
   # hard-pins esbuild ~0.18.20, which carries the dev-server SSRF. drizzle-kit
   # itself already declares ^0.25.4, so only this leaf needs lifting. This is the
   # hard-pin case, so no upstream patch release can ever retire it on its own.
-  # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.10 and 0.31.11
-  # (still `latest`) both declare "@esbuild-kit/esm-loader": "^2.5.5", and
+  # Remove once drizzle-kit drops the @esbuild-kit chain -- 0.31.11 (installed, and
+  # still `latest`) declares "@esbuild-kit/esm-loader": "^2.5.5", and
   # drizzle-kit 1.x is rc-only while the stack is locked to stable.
   # Re-tested this cycle by dropping the entry and re-resolving: esbuild 0.18.20
   # comes back (drizzle-kit is reached from the root, better-auth and the auth
@@ -93,14 +93,14 @@ overrides:
 # BetterAuthPlugin and `createAuth` fails to compile. The patch adds the missing
 # `| undefined` to those three properties -- strictly widening, and consistent
 # with how the same object already types its other optional fields.
-# The fix is upstream: better-call 1.4.2 (`latest` since 2026-10-08) declares all
-# three as `| undefined` in both openapi.d.mts and .d.cts. It is still not
-# reachable. better-auth depends on, and @better-auth/oauth-provider peer-pins,
-# better-call at exactly "1.4.0" -- in 1.7.5, and unchanged through 1.7.7. 1.7.8
-# (2026-10-14) is the first to move both pins to exactly "1.4.2", so the patch
-# retires with the first better-auth bump to >=1.7.8 once that clears the 30-day
-# window; forcing 1.4.2 sooner would trade the patch for an override that breaks
-# an exact peer pin. The `release-2.0` dist-tag's 2.0.6 is not an upgrade path.
+# The fix is upstream: better-call 1.4.2 declares all three as `| undefined` in
+# both openapi.d.mts and .d.cts. It is still not reachable. better-auth depends
+# on, and @better-auth/oauth-provider peer-pins, better-call at exactly "1.4.0" --
+# in the installed 1.7.6, and unchanged through 1.7.7. 1.7.8 (2026-10-14) is the
+# first to move both pins (to exactly "1.4.2"; 1.7.14 pins "1.4.4"), so the patch
+# retires with the first better-auth bump to >=1.7.8, which clears the 30-day
+# window on 2026-11-13; forcing 1.4.2 sooner would trade the patch for an override
+# that breaks an exact peer pin. `release-2.0`'s 2.0.6 is not an upgrade path.
 # A better-call bump makes the patch fail loudly rather than silently rot.
 # Re-verified this cycle by removing the patch and running `tsc -b --force`:
 # still fails on oauth2Authorize -- `not assignable to type 'BetterAuthPlugin'`.

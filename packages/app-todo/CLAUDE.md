@@ -73,7 +73,7 @@ Exports FOUR subpaths (mirrors `app-grocery`):
 - MCP failures return `structuredContent: { error }` and are audited with the
   error kind, like successes.
 - Migrations: `bun run db:generate`, never hand-written SQL. drizzle-kit
-  0.31.10 drops `ON DELETE` when it ADDs a column with a foreign key in SQLite
+  0.31.10 and 0.31.11 drop `ON DELETE` when it ADDs a column with a foreign key in SQLite
   (`ALTER TABLE … ADD … REFERENCES t(c)`, see `SQLiteAlterTableAddColumnConvertor`).
   Add such a column in two generated steps: first without `.references()`,
   then with it, which makes drizzle-kit rebuild the table and keep the delete
