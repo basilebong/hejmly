@@ -70,7 +70,7 @@ overrides:
   # "@babel/helper-compilation-targets" and "core-js-compat" (browserslist),
   # "ajv>fast-uri" and "express>qs" all named leaves under open carets, so the
   # resolver reaches the published fixes unaided; so do ajv's fast-uri ^3.0.1 and
-  # express-rate-limit's ip-address ^10.2.0. One override is left.
+  # express-rate-limit's ip-address ^10.2.0.
 
   # @esbuild-kit/core-utils (deprecated, via drizzle-kit > @esbuild-kit/esm-loader)
   # hard-pins esbuild ~0.18.20, which carries the dev-server SSRF. drizzle-kit
@@ -84,6 +84,29 @@ overrides:
   # CLI, so this is not a dev-only chain) and GHSA-67mh-4wv8-2f99 returns moderate.
   "@esbuild-kit/core-utils>esbuild": ">=0.25.0"
 
+  # workbox-build (via vite-plugin-pwa, build-time SW manifest injection) declares
+  # glob ^11.0.1, which tops out at 11.1.0 -> minimatch ^10. glob <=14.0.1 carries
+  # GHSA-3g3m-2fjr-6pw4 and minimatch <11.0.1 carries GHSA-g3hv-75wg-m249, and both
+  # fixes exist only on new majors (glob 14.0.2, minimatch 11.0.1), so the range
+  # cannot reach them. 7.4.1 is workbox-build's `latest`; there is no newer
+  # release to upgrade to. workbox-build's only glob call is
+  # `globSync(pattern, { cwd, follow, ignore })` in lib/get-file-details.js;
+  # glob 14 keeps that signature and its CJS `require` export, and `pnpm build`
+  # emits the same precache manifest. glob 14.0.2 brings minimatch ^11.0.0.
+  # Remove once a workbox-build release declares glob >=14.0.2.
+  "workbox-build>glob": "14.0.2"
+
+  # workbox-build declares @trickfilm400/rollup-plugin-off-main-thread
+  # ^3.0.0-pre1, which resolves to 3.0.0-pre1 -> ejs ^3.1.10 -> jake -> filelist
+  # 1.x -> minimatch 5.1.9 (GHSA-g3hv-75wg-m249 again). A prerelease caret does
+  # not reach 4.0.0. 4.0.0's index.js differs from 3.0.0-pre1 only by replacing
+  # the string.prototype.matchall polyfill with native String#matchAll; its
+  # package.json moves ejs to ^7.0.1, which has no dependencies, so jake,
+  # filelist and minimatch 5 leave the tree. The plugin calls only
+  # `ejs.render(template, opts)`, which ejs 7's CJS build still exports.
+  # Remove with the glob entry above, once workbox-build declares ^4.
+  "workbox-build>@trickfilm400/rollup-plugin-off-main-thread": "4.0.0"
+
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
 # `schema.minLength` as optional WITHOUT `| undefined`, while the sibling
 # `format`/`description`/`default`/`example` in the same object do include it.
@@ -96,7 +119,7 @@ overrides:
 # The fix is upstream: better-call 1.4.2 declares all three as `| undefined` in
 # both openapi.d.mts and .d.cts. It is still not reachable. better-auth depends
 # on, and @better-auth/oauth-provider peer-pins, better-call at exactly "1.4.0" --
-# in the installed 1.7.6, and unchanged through 1.7.7. 1.7.8 (2026-10-14) is the
+# in 1.7.6 and in the installed 1.7.7. 1.7.8 (2026-10-14) is the
 # first to move both pins (to exactly "1.4.2"; 1.7.14 pins "1.4.4"), so the patch
 # retires with the first better-auth bump to >=1.7.8, which clears the 30-day
 # window on 2026-11-13; forcing 1.4.2 sooner would trade the patch for an override
