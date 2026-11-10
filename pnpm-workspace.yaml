@@ -66,11 +66,14 @@ overrides:
   # nothing. So each entry here has to be re-tested, not just re-read: drop it,
   # re-resolve, and see whether the advisory actually comes back.
   #
-  # That test is what retired six earlier entries.
+  # That test is what retired seven earlier entries.
   # "@babel/helper-compilation-targets" and "core-js-compat" (browserslist),
   # "ajv>fast-uri" and "express>qs" all named leaves under open carets, so the
   # resolver reaches the published fixes unaided; so do ajv's fast-uri ^3.0.1 and
   # express-rate-limit's ip-address ^10.2.0.
+  # "workbox-build>@trickfilm400/rollup-plugin-off-main-thread" existed only to
+  # drop minimatch 5.1.9; GHSA-g3hv-75wg-m249 now reads >=7.0.0 <11.0.1, so 5.1.9
+  # is outside it and the audit is clean without the entry.
 
   # @esbuild-kit/core-utils (deprecated, via drizzle-kit > @esbuild-kit/esm-loader)
   # hard-pins esbuild ~0.18.20, which carries the dev-server SSRF. drizzle-kit
@@ -95,17 +98,6 @@ overrides:
   # emits the same precache manifest. glob 14.0.2 brings minimatch ^11.0.0.
   # Remove once a workbox-build release declares glob >=14.0.2.
   "workbox-build>glob": "14.0.2"
-
-  # workbox-build declares @trickfilm400/rollup-plugin-off-main-thread
-  # ^3.0.0-pre1, which resolves to 3.0.0-pre1 -> ejs ^3.1.10 -> jake -> filelist
-  # 1.x -> minimatch 5.1.9 (GHSA-g3hv-75wg-m249 again). A prerelease caret does
-  # not reach 4.0.0. 4.0.0's index.js differs from 3.0.0-pre1 only by replacing
-  # the string.prototype.matchall polyfill with native String#matchAll; its
-  # package.json moves ejs to ^7.0.1, which has no dependencies, so jake,
-  # filelist and minimatch 5 leave the tree. The plugin calls only
-  # `ejs.render(template, opts)`, which ejs 7's CJS build still exports.
-  # Remove with the glob entry above, once workbox-build declares ^4.
-  "workbox-build>@trickfilm400/rollup-plugin-off-main-thread": "4.0.0"
 
 # better-call's OpenAPIParameter declares `schema.items`, `schema.enum` and
 # `schema.minLength` as optional WITHOUT `| undefined`, while the sibling
