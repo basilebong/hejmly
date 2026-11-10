@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.9.1",
+  "packageManager": "pnpm@12.12.0",
   "license": "Elastic-2.0",
   "scripts": {
     "hooks:install": "lefthook install",
@@ -22,11 +22,11 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@types/react": "19.3.0",
-    "bun-types": "1.4.2",
+    "bun-types": "1.4.3",
     "concurrently": "10.0.6",
     "drizzle-kit": "0.31.11",
-    "drizzle-orm": "0.45.3",
-    "lefthook": "2.1.16",
+    "drizzle-orm": "0.45.4",
+    "lefthook": "2.2.1",
     "typescript": "7.0.2"
   },
   "engines": {
